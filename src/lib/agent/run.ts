@@ -75,7 +75,7 @@ function errorMessage(e: unknown): { code: "model" | "timeout"; message: string 
   const err = e as { status?: number; name?: string; message?: string };
   if (err?.name === "TimeoutError" || /timed? ?out/i.test(err?.message ?? "")) return { code: "timeout", message: "The model took too long to respond. Please try again." };
   if (err?.status === 401) return { code: "model", message: "The API key was rejected (401). Check the key in .env.local and restart the dev server." };
-  if (err?.status === 429) return { code: "model", message: "Rate limit reached at the model provider (429). Wait a moment and retry." };
+  if (err?.status === 429 || err?.status === 413) return { code: "model", message: "The model provider's rate limit was reached (free tiers allow only a few requests per minute). Wait about a minute and retry." };
   if (err?.status === 404) return { code: "model", message: "The configured model was not found (404). Check GROQ_MODEL / OPENAI_MODEL." };
   if (err?.status && err.status >= 500) return { code: "model", message: `The model provider had an error (${err.status}). Please retry.` };
   return { code: "model", message: "The model request failed. Please retry." };

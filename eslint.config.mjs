@@ -6,6 +6,7 @@ export default tseslint.config(
   { ignores: [".next/**", "node_modules/**", "data/**", "next-env.d.ts"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
+  { files: ["scripts/**"], languageOptions: { globals: { process: "readonly", console: "readonly" } } },
   {
     plugins: { "react-hooks": reactHooks },
     rules: {

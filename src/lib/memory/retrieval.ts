@@ -65,7 +65,7 @@ export interface RetrieveInput {
 }
 
 const HIGH_VALUE = new Set(["shortlist", "comparison", "research_snapshot", "decision"]);
-const THREAD_LIMIT = 12;
+const THREAD_LIMIT = 8; // bounded for small token-per-minute budgets (Groq free tier)
 
 function toTurns(db: DB, users: Message[]): RecalledTurn[] {
   return users.filter((m) => m.role === "user").map((u) => ({ user: u, assistant: replyTo(db, u) }));

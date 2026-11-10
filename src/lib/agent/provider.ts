@@ -44,12 +44,15 @@ export function buildGroqRequest(req: ModelRequest, cfg: Pick<AppConfig, "GROQ_M
   if (req.memoryContext) messages.push({ role: "system", content: req.memoryContext });
   for (const t of req.history) messages.push({ role: t.role, content: t.content });
   messages.push({ role: "user", content: req.user });
+  // Groq advises low effort for browsing (higher = longer browser sessions).
+  // Multi-entity change checks get at least "medium" for coverage.
+  const effort = req.toolChoice === "required" && cfg.GROQ_REASONING_EFFORT === "low" ? "medium" : cfg.GROQ_REASONING_EFFORT;
   const body: Json = {
     model: cfg.GROQ_MODEL,
     messages,
-    reasoning_effort: cfg.GROQ_REASONING_EFFORT,
+    reasoning_effort: effort,
     temperature: 0.3,
-    max_completion_tokens: 6000,
+    max_completion_tokens: 4000,
     stream: true,
   };
   if (req.toolChoice !== "none") {
@@ -117,8 +120,18 @@ export class GroqProvider implements LlmProvider {
       return r;
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const stream = (await this.client.chat.completions.create(body as any, { signal })) as unknown as AsyncIterable<Json>;
+    const open = (b: Json) =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      this.client.chat.completions.create(b as any, { signal }) as unknown as Promise<AsyncIterable<Json>>;
+    let stream: AsyncIterable<Json>;
+    try {
+      stream = await open(body);
+    } catch (e) {
+      // Groq documents browser_search with tool_choice "required"; if "auto"
+      // is rejected for a model, retry once with "required" rather than fail.
+      if ((e as { status?: number }).status === 400 && body.tool_choice === "auto") stream = await open({ ...body, tool_choice: "required" });
+      else throw e;
+    }
     for await (const chunk of stream) {
       const choice = (chunk.choices as Json[] | undefined)?.[0];
       const delta = (choice?.delta ?? {}) as Json;
@@ -140,8 +153,11 @@ export class GroqProvider implements LlmProvider {
         text += content;
         yield { type: "text", delta: content };
       }
+      // Groq has carried tool results in different places; accept each.
       const x = chunk.x_groq as Json | undefined;
       if (x?.executed_tools) absorb(x.executed_tools);
+      const msg = choice?.message as Json | undefined;
+      if (msg?.executed_tools) absorb(msg.executed_tools);
     }
     yield { type: "done", text, sources, searchQueries: [...new Set(queries)] };
   }

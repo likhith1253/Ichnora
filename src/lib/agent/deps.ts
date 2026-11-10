@@ -12,5 +12,6 @@ export function productionDeps(): AgentDeps {
     provider: createProvider(cfg),
     missingVar: status.missingVar,
     timeoutMs: cfg.AGENT_TIMEOUT_MS,
+    modelDistill: cfg.MEMORY_DISTILL === "model",
   };
 }

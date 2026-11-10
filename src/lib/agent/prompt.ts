@@ -93,7 +93,7 @@ ${ctx}
 
   const history: ChatTurn[] = r.thread.map((m: Message) => ({
     role: m.role,
-    content: sanitizeUntrusted(m.content, m.role === "assistant" ? 3000 : 2000),
+    content: sanitizeUntrusted(m.content, m.role === "assistant" ? 1500 : 800),
   }));
 
   return { system, memoryContext, history, user: opts.userText, toolChoice: r.toolChoice };

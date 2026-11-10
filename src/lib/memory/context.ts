@@ -2,7 +2,7 @@ import type { MemoryItem, Message } from "../db/repo";
 import { formatLongDate, localTimeOf } from "../time/dates";
 import type { RecalledTurn, Retrieval } from "./retrieval";
 
-const MAX_CONTEXT_CHARS = 14_000;
+const MAX_CONTEXT_CHARS = 9_000; // ~2.3K tokens: fits Groq free-tier TPM with room for search results
 
 /** Neutralise anything that could close or spoof our delimiters. */
 export function sanitizeUntrusted(text: string, max: number): string {

@@ -8,10 +8,12 @@ const schema = z.object({
   LLM_PROVIDER: z.enum(["groq", "openai"]).default("groq"),
   GROQ_API_KEY: z.string().optional(),
   GROQ_MODEL: z.string().min(1).default("openai/gpt-oss-120b"),
-  GROQ_REASONING_EFFORT: z.enum(["low", "medium", "high"]).default("medium"),
+  GROQ_REASONING_EFFORT: z.enum(["low", "medium", "high"]).default("low"),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_MODEL: z.string().min(1).default("gpt-5-mini"),
   MINIMI_DB_PATH: z.string().optional(),
+  /** "heuristic" (default, zero extra API calls) or "model" (one small extra call per research turn). */
+  MEMORY_DISTILL: z.enum(["heuristic", "model"]).default("heuristic"),
   AGENT_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(600_000).default(120_000),
 });
 
@@ -31,6 +33,7 @@ export function getConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     OPENAI_API_KEY: clean(env.OPENAI_API_KEY),
     OPENAI_MODEL: clean(env.OPENAI_MODEL),
     MINIMI_DB_PATH: clean(env.MINIMI_DB_PATH),
+    MEMORY_DISTILL: clean(env.MEMORY_DISTILL)?.toLowerCase(),
     AGENT_TIMEOUT_MS: clean(env.AGENT_TIMEOUT_MS),
   });
 }

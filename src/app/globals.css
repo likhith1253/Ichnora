@@ -144,7 +144,8 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .msg.error .msg-body, .msg.cancelled .msg-body { color: var(--muted); font-style: italic; }
 .table-wrap { overflow-x: auto; margin: 0.8em 0; border: 1px solid var(--rule); border-radius: 10px; background: var(--card); }
 table { border-collapse: collapse; width: 100%; font-family: var(--sans); font-size: 13.5px; line-height: 1.45; }
-th, td { padding: 8px 11px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--rule); }
+th, td { padding: 8px 11px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--rule); overflow-wrap: normal; word-break: normal; min-width: 7.5em; }
+td:first-child, th:first-child { min-width: 6em; }
 th { background: var(--paper-2); font-weight: 600; white-space: nowrap; }
 tr:last-child td { border-bottom: 0; }
 a { color: var(--accent-ink); }
