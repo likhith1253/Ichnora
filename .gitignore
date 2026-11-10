@@ -13,3 +13,4 @@ data/
 next-env.d.ts
 npm-debug.log*
 .vercel
+.claude/

@@ -136,7 +136,7 @@ export function heuristicExtract(user: string, assistant: string, searched: bool
   const ents = dedupe(entities).filter((e) => !NOT_ENTITY.test(e)).slice(0, 20);
   const title = stripMd(user).replace(/\s+/g, " ").slice(0, 120);
   const constraints = (user.match(/\b\d+[- ](?:person|people|seat|user|member|employee)s?\b[^.?!]*|\bbudget[^.?!]*|\bunder [$€£₹]?\d[^.?!]*/gi) ?? []).map((s) => s.trim());
-  const firstSentences = stripMd(assistant.replace(/\|[^\n]*\|/g, " ").replace(/#+\s/g, ""))
+  const firstSentences = stripMd(assistant.replace(/\|[^\n]*\|/g, " ").replace(/#+\s/g, "").replace(/\s+/g, " "))
     .split(/(?<=[.!?])\s+/)
     .filter((s) => s.length > 20)
     .slice(0, 2)

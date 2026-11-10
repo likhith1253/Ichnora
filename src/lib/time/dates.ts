@@ -64,14 +64,13 @@ export function weekdayOf(date: string): number {
   return new Date(`${date}T00:00:00Z`).getUTCDay();
 }
 
+/** Locale-independent "Monday 9 November 2026" (stable for prompts and tests). */
 export function formatLongDate(date: string): string {
-  return new Date(`${date}T12:00:00Z`).toLocaleDateString("en-GB", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  });
+  const [y, m, d] = date.split("-").map(Number) as [number, number, number];
+  const wd = WEEKDAYS[weekdayOf(date)]!;
+  const month = MONTHS[m - 1]!;
+  const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+  return `${cap(wd)} ${d} ${cap(month)} ${y}`;
 }
 
 function ymd(y: number, m: number, d: number): string | null {

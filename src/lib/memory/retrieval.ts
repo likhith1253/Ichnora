@@ -156,10 +156,10 @@ export function retrieve(db: DB, input: RetrieveInput): Retrieval {
   const scored = scoreCandidates([...pool.values()], a, { conversationId: input.conversationId, today, boostIds });
 
   // 3. Referent resolution for pronouns / implicit follow-ups.
+  // A follow-up needs a referent when it points back ("them", "still correct?")
+  // without naming enough to stand alone, or explicitly refers to the past.
   const needsReferent =
-    (a.hasAnaphora && a.strongTerms.length <= 1) ||
-    a.refersToPast ||
-    (a.asksFreshness && (a.hasAnaphora || a.dateRefs.length > 0 || a.strongTerms.length <= 1));
+    ((a.hasAnaphora || a.asksFreshness) && a.strongTerms.length <= 1) || a.refersToPast || a.dateRefs.length > 0;
   let referent: MemoryItem | null = null;
   let ambiguous: MemoryItem[] = [];
   if (needsReferent && scored.length > 0) {
