@@ -98,7 +98,7 @@ export async function* runTurn(deps: AgentDeps, input: TurnInput, signal: AbortS
       type: "error",
       code: "config",
       missingVar: deps.missingVar,
-      message: `Chat is not configured yet. Add ${deps.missingVar ?? "an API key"} to .env.local and restart \`npm run dev\`.`,
+      message: `Chat is not configured yet. Add ${deps.missingVar ?? "an API key"} to .env.local and send your message again (no restart needed).`,
     };
     return;
   }
