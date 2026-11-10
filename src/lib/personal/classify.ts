@@ -192,7 +192,9 @@ export function classifyMessage(text: string, now: Date, timeZone: string): Clas
     const people = findNames(s);
     const pastRef = parseDateRefs(s, now, timeZone).find((r) => r.end <= today);
     const eventDate = pastRef?.start ?? today;
-    const base = { quote: s, people, eventDate, rationale: rationaleOf(s), alternatives: [] as string[], evidence: "explicit" as const };
+    // Statements are dated by when they were said; only completion evidence uses
+    // past references ("I sent it yesterday"). "by Friday" is a deadline, not an event date.
+    const base = { quote: s, people, eventDate: today, rationale: rationaleOf(s), alternatives: [] as string[], evidence: "explicit" as const };
 
     /* ---- completion evidence: "I sent Rahul the report yesterday" */
     const comp = s.match(new RegExp(`\\b(?:I|we)\\s+(?:have\\s+|'ve\\s+|just\\s+|already\\s+|finally\\s+)*(${PAST_VERBS.map((v) => v.replace(" ", "\\s+")).join("|")})\\b(.*)$`, "i"));

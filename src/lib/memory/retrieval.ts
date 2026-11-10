@@ -14,6 +14,8 @@ import {
 } from "../db/repo";
 import { analyzeQuery, ftsQuery, tokenize, type QueryAnalysis } from "./query";
 import { localDateOf, type DateRef } from "../time/dates";
+import { decisionTimeline, openLoops as loadOpenLoops, relevantPersonal, type DecisionEntry, type OpenLoops } from "../personal/queries";
+import type { Memory } from "../personal/store";
 
 /**
  * What the agent is being asked to do, decided by application code.
@@ -21,9 +23,11 @@ import { localDateOf, type DateRef } from "../time/dates";
  *  - recall:            "what did I ask on 3 Nov?" (no search; answer from DB)
  *  - recall_and_verify: recall + "is it still correct / has it changed?" (search required)
  *  - clarify:           a pronoun with several equally plausible referents (no search)
+ *  - open_loops:        "what's pending / what did I promise Rahul?" (no search; SQL over commitments)
+ *  - decision_history:  "how has my thinking about the database changed?" (no search; decision timeline)
  *  - research:          everything else (model decides whether to search)
  */
-export type Intent = "chat" | "recall" | "recall_and_verify" | "clarify" | "research";
+export type Intent = "chat" | "recall" | "recall_and_verify" | "clarify" | "open_loops" | "decision_history" | "research";
 export type ToolChoice = "auto" | "required" | "none";
 
 export interface RecalledTurn {
@@ -52,6 +56,13 @@ export interface Retrieval {
   thread: Message[];
   /** True when the user referred to the past but nothing was found. */
   noMemoryFound: boolean;
+  /** Structured open loops (only for open-loop questions). */
+  openLoops: OpenLoops | null;
+  /** Decision timelines (only for decision-history questions). */
+  decisions: Array<{ subject: string; entries: DecisionEntry[] }>;
+  /** Small, relevant slice of personal memory (facts, preferences, related commitments). */
+  personal: Memory[];
+  today: string;
 }
 
 export interface RetrieveInput {
@@ -205,17 +216,30 @@ export function retrieve(db: DB, input: RetrieveInput): Retrieval {
   const pastAsked = a.asksRecall || a.refersToPast || (a.hasAnaphora && a.strongTerms.length <= 1 && thread.length === 0);
   // Date asked but nothing on that date = honest "nothing found", even if other memory exists.
   const dateMiss = a.dateRefs.length > 0 && dateHits.length > 0 && !anyDateHit && (a.asksRecall || a.refersToPast);
-  const noMemoryFound = pastAsked && (!pastFound || dateMiss);
+  const personalQuestion = (a.asksOpenLoops || a.asksDecisions) && !a.asksRecall;
+  const noMemoryFound = !personalQuestion && pastAsked && (!pastFound || dateMiss);
+
+  // Personal memory (SQL/FTS, bounded). Open loops and decisions only when asked.
+  const openLoops = a.asksOpenLoops ? loadOpenLoops(db, input.workspaceId, today, a.people[0] ?? null) : null;
+  const decisions = a.asksDecisions ? decisionTimeline(db, input.workspaceId, [...a.strongTerms, ...a.weakTerms]) : [];
+  const personal = relevantPersonal(db, input.workspaceId, { ftsQuery: strongQ, people: a.people, limit: 6 });
 
   let intent: Intent;
   let toolChoice: ToolChoice;
+  const verify = (a.asksRecall || a.refersToPast || referent || carriedTurns.length > 0) && a.asksFreshness && !noMemoryFound && (anyDateHit || referent || carriedTurns.length > 0);
   if (a.isGreeting) {
     intent = "chat";
     toolChoice = "none";
   } else if (ambiguous.length > 1) {
     intent = "clarify";
     toolChoice = "none";
-  } else if ((a.asksRecall || a.refersToPast || referent || carriedTurns.length > 0) && a.asksFreshness && !noMemoryFound && (anyDateHit || referent || carriedTurns.length > 0)) {
+  } else if (a.asksOpenLoops && !verify) {
+    intent = "open_loops";
+    toolChoice = "none";
+  } else if (a.asksDecisions && !verify && (decisions.length > 0 || /\b(?:my|our|we|i)\b/i.test(input.text))) {
+    intent = "decision_history";
+    toolChoice = "none";
+  } else if (verify) {
     intent = "recall_and_verify";
     toolChoice = "required";
   } else if (a.asksRecall && !a.asksFreshness) {
@@ -239,6 +263,10 @@ export function retrieve(db: DB, input: RetrieveInput): Retrieval {
     relatedTurns,
     thread,
     noMemoryFound,
+    openLoops,
+    decisions,
+    personal,
+    today,
   };
 }
 

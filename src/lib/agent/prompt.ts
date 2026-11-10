@@ -38,6 +38,9 @@ You have exactly one tool: web search. Nothing else. Memory is supplied by the a
 - When asked what the user asked, quote the saved USER message verbatim with its date and local time. Never reconstruct or paraphrase a question that is not in the memory context.
 - If the memory context says nothing was found, say you have no saved record of it. Never invent a past conversation, shortlist, price or answer.
 
+## Personal memory
+- Personal context, commitments and decisions come from the user's OWN past statements (quoted with dates). Never invent commitments, deadlines, participants, reasons or completions. A task is complete only if the memory says so.
+
 ## Change checks ("still correct?", "has it changed since?")
 - The baseline is the date of the original conversation; today's date is the verification date.
 - Compare like with like (plan/tier, billing period, currency, region, seat count, taxes). Flag mismatches instead of comparing them.
@@ -61,6 +64,10 @@ function intentDirective(r: Retrieval, today: string): string {
       return r.noMemoryFound
         ? "The user asks about past conversations but the application found NO matching saved messages. Say plainly that you have no record for that date/topic (mention the exact date you checked). Do not invent anything and do not search."
         : "Answer from the memory context only: quote the user's original message(s) verbatim with date and local time, and summarise the saved answer. Do not search.";
+    case "open_loops":
+      return "The user asks about their open loops. Answer ONLY from the 'Open loops' section: list commitments, waiting items, overdue and due-soon items with their due dates and the quote/date they came from. Never add items, owners or deadlines that are not listed; say 'no due date stated' where none exists. Keep tentative intentions separate from promises. Do not search.";
+    case "decision_history":
+      return "The user asks how a decision evolved. Reconstruct the timeline ONLY from the 'Decision history' section, oldest first: what was considered, chosen, rejected or superseded, with dates and the user's own words. Only give reasons that were explicitly stated ('no reason was recorded' otherwise). If no decisions are recorded, say so. Do not search.";
     case "recall_and_verify":
       return `This is a change/freshness check against a saved baseline. First state what was asked/decided originally (date, items, baseline values, sources). Then you MUST web-search current official sources for EACH item and compare against the baseline. Verification date: ${formatLongDate(today)}. Use the Then/Now/Status table.`;
     default:

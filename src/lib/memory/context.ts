@@ -1,4 +1,5 @@
 import type { MemoryItem, Message } from "../db/repo";
+import type { Memory } from "../personal/store";
 import { formatLongDate, localTimeOf } from "../time/dates";
 import type { RecalledTurn, Retrieval } from "./retrieval";
 
@@ -51,8 +52,12 @@ function renderMemory(m: MemoryItem): string {
 /** Render retrieved memory as a bounded, clearly-labelled untrusted block. */
 export function renderMemoryContext(r: Retrieval): string | null {
   const parts: string[] = [];
+  const pparts: string[] = []; // personal-memory sections
+  // For open-loop/decision questions the personal sections lead (and are never
+  // the part cut by the size limit); incidental dates ("yesterday") add noise.
+  const personalIntent = r.intent === "open_loops" || r.intent === "decision_history";
 
-  for (const hit of r.dateHits) {
+  for (const hit of personalIntent && !r.analysis.asksRecall ? [] : r.dateHits) {
     const range = hit.ref.start === hit.ref.end ? formatLongDate(hit.ref.start) : `${formatLongDate(hit.ref.start)} – ${formatLongDate(hit.ref.end)}`;
     parts.push(`## Saved messages for "${hit.ref.phrase}" → ${range}${hit.ref.assumption ? `\nDate assumption: ${hit.ref.assumption}` : ""}`);
     if (hit.turns.length === 0) parts.push("NO saved user messages exist on this date.");
@@ -90,10 +95,52 @@ export function renderMemoryContext(r: Retrieval): string | null {
     r.relatedTurns.forEach((t, i) => parts.push(renderTurn(t, i + 1, 900)));
   }
 
+  if (r.openLoops) {
+    const L = r.openLoops;
+    const line = (m: Memory) =>
+      `  • [${m.status}${m.kind === "intention" ? ", intention only" : ""}] ${m.content}${m.counterparty ? ` (with ${m.counterparty})` : ""}` +
+      `${m.dueDate ? ` — due ${formatLongDate(m.dueDate)}${m.dueDate < L.today ? " (OVERDUE)" : ""}` : " — no due date stated"}` +
+      ` · said ${formatLongDate(m.eventDate)}: "${sanitizeUntrusted(m.quote, 220)}" (memory_id=${m.id})`;
+    pparts.push(`## Open loops (from the user's own statements; today is ${formatLongDate(L.today)})`);
+    const block = (title: string, items: Memory[], empty?: string) => {
+      if (items.length) pparts.push([`${title}:`, ...items.map(line)].join("\n"));
+      else if (empty) pparts.push(`${title}: ${empty}`);
+    };
+    block("Commitments & obligations", L.open, "none recorded.");
+    block("Waiting on others", L.waiting, "none recorded.");
+    block("Tentative intentions (NOT promises)", L.considering);
+    block("Recently closed (last 14 days)", L.recentlyClosed);
+  }
+
+  if (r.decisions.length) {
+    pparts.push("## Decision history (chronological, from the user's own statements)");
+    for (const d of r.decisions) {
+      pparts.push(`Subject: ${d.subject}`);
+      for (const e of d.entries) {
+        const m = e.memory;
+        const rel = e.links.filter((l) => l.fromId === m.id).map((l) => l.relation.toLowerCase()).join(", ");
+        pparts.push(
+          `  • ${formatLongDate(m.eventDate)} [${m.kind}${m.status === "SUPERSEDED" ? ", later superseded" : ""}] "${sanitizeUntrusted(m.quote, 240)}"` +
+            `${m.rationale ? ` — stated reason: ${sanitizeUntrusted(m.rationale, 160)}` : " — no reason stated"}${m.alternatives.length ? ` — alternatives discussed: ${m.alternatives.join(", ")}` : ""}${rel ? ` — ${rel}` : ""}`,
+        );
+      }
+    }
+  } else if (r.intent === "decision_history") {
+    pparts.push(["## Decision history", "NO recorded decisions match this question."].join("\n"));
+  }
+
+  const shownIds = new Set([...(r.openLoops ? [...r.openLoops.open, ...r.openLoops.waiting, ...r.openLoops.considering, ...r.openLoops.recentlyClosed] : []), ...r.decisions.flatMap((d) => d.entries.map((e) => e.memory))].map((m) => m.id));
+  const personal = r.personal.filter((m) => !shownIds.has(m.id));
+  if (personal.length) {
+    pparts.push("## Known personal context (user's own statements; use only if relevant)");
+    for (const m of personal) pparts.push(`  • [${m.type.toLowerCase()}${m.evidence !== "explicit" ? `, ${m.evidence}` : ""}] ${sanitizeUntrusted(m.content, 200)} (said ${formatLongDate(m.eventDate)})`);
+  }
+
   if (r.noMemoryFound) {
     parts.push("## Retrieval outcome\nNO matching saved conversation was found for what the user is referring to.");
   }
 
+  parts.splice(personalIntent ? 0 : parts.length, 0, ...pparts);
   if (parts.length === 0) return null;
   let body = parts.join("\n\n");
   if (body.length > MAX_CONTEXT_CHARS) body = `${body.slice(0, MAX_CONTEXT_CHARS)}\n…[memory context truncated]`;

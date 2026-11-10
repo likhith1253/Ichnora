@@ -96,7 +96,7 @@ export function relevantPersonal(db: DB, workspaceId: string, opts: { ftsQuery: 
     const rows = db
       .prepare(
         `SELECT m.* FROM memories m JOIN memory_entities me ON me.memory_id = m.id JOIN entities e ON e.id = me.entity_id
-         WHERE m.workspace_id = ? AND e.norm = ? AND m.status != 'SUPERSEDED' ORDER BY m.seq DESC LIMIT ?`,
+         WHERE m.workspace_id = ? AND e.norm = ? AND m.status != 'SUPERSEDED' AND m.subject NOT LIKE 'evidence:%' ORDER BY m.seq DESC LIMIT ?`,
       )
       .all(workspaceId, normName(p), limit) as Row[];
     rows.forEach((r) => out.set(r.id, toMemory(r)));

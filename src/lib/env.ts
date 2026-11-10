@@ -15,6 +15,8 @@ const schema = z.object({
   /** Hard cap on Tavily queries per answer (1 credit each on the free plan). */
   MAX_SEARCHES_PER_TURN: z.coerce.number().int().min(1).max(12).default(6),
   MINIMI_DB_PATH: z.string().optional(),
+  /** Used when the browser does not send a valid IANA timezone. */
+  DEFAULT_TIMEZONE: z.string().min(1).default("Asia/Kolkata"),
   /** "heuristic" (default, zero extra API calls) or "model" (one small extra call per research turn). */
   MEMORY_DISTILL: z.enum(["heuristic", "model"]).default("heuristic"),
   AGENT_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(600_000).default(120_000),
@@ -67,6 +69,7 @@ export function getConfig(env: NodeJS.ProcessEnv = projectEnv()): AppConfig {
     TAVILY_API_KEY: clean(env.TAVILY_API_KEY),
     MAX_SEARCHES_PER_TURN: clean(env.MAX_SEARCHES_PER_TURN),
     MINIMI_DB_PATH: clean(env.MINIMI_DB_PATH),
+    DEFAULT_TIMEZONE: clean(env.DEFAULT_TIMEZONE),
     MEMORY_DISTILL: clean(env.MEMORY_DISTILL)?.toLowerCase(),
     AGENT_TIMEOUT_MS: clean(env.AGENT_TIMEOUT_MS),
   });

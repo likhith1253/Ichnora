@@ -19,6 +19,12 @@ export interface QueryAnalysis {
   strongTerms: string[];
   /** Generic topical words (pricing, release…) — weak retrieval signal. */
   weakTerms: string[];
+  /** "What's pending?", "what did I promise Rahul?", "what am I waiting for?" */
+  asksOpenLoops: boolean;
+  /** "How has my thinking about the database changed?", "why did we choose X?" */
+  asksDecisions: boolean;
+  /** Capitalised person-like names in the question ("Rahul"). */
+  people: string[];
 }
 
 const RECALL_RE =
@@ -32,6 +38,15 @@ const ANAPHORA_RE =
 
 const PAST_RE =
   /\b(?:we|you|i) (?:shortlisted|discussed|compared|looked at|talked about|picked|chose|decided|found|recommended|asked|said|mentioned)\b|\b(?:you|u) (?:told|said|recommended|suggested)\b|\blast time\b|\bearlier\b|\bpreviously\b|\bbefore\b|\bour (?:shortlist|list|discussion|conversation|chat)\b|\bi asked you\b/i;
+
+const OPEN_LOOPS_RE =
+  /\b(?:commitments?|promis(?:e|ed|es)|pending|to-?dos?|open loops?|outstanding|waiting (?:for|on)|overdue|deadlines?|action items?|follow[- ]?ups?|tasks?)\b|\bwhat (?:do|did) i (?:have to|need to|owe|still need)\b|\bwhat(?:'s| is) (?:left|due|on my plate)\b|\b(?:what|which) (?:have i|did i) (?:finish|finished|complete|completed|done)\b/i;
+
+const DECISIONS_RE =
+  /\b(?:decid(?:e|ed|ing)|decisions?|chose|choose|chosen|why did (?:we|i) (?:pick|choose|go with|use|select)|alternatives?|rejected|change[d]? (?:my|our) mind|my thinking|our thinking|earlier approach|what did we (?:pick|settle on|go with))\b/i;
+
+const NAME_RE = /\b([A-Z][a-z]{2,20})\b/g;
+const NOT_PERSON = new Set("What Which Who Why When Where How Has Have Did Does Do Is Are Was Were Can Could Should Would Will I I'm I've On In At For From The This That These Those Last Next My Our Monday Tuesday Wednesday Thursday Friday Saturday Sunday January February March April May June July August September October November December Today Tomorrow Yesterday Please Minimi Postgres PostgreSQL MongoDB CRM".split(" "));
 
 const GREETING_RE = /^\s*(?:hi|hello|hey|yo|hiya|good (?:morning|afternoon|evening)|thanks?(?: you)?|thank u|ok(?:ay)?|cool|great|nice)\b[\s!.,?]*(?:there|minimi)?[\s!.,?]*$/i;
 
@@ -73,6 +88,17 @@ export function analyzeQuery(text: string, now: Date, timeZone: string): QueryAn
   return {
     dateRefs,
     asksRecall,
+    asksOpenLoops: OPEN_LOOPS_RE.test(text) && !/\b(?:pricing|price|plan)s?\b/i.test(text),
+    asksDecisions: DECISIONS_RE.test(text),
+    // Names in the *question* part ("…? What did I promise Rahul?") — statements
+    // in the same message ("I sent Rahul the report.") must not filter the answer.
+    people: [
+      ...new Set(
+        [...(text.split(/(?<=[.!])\s+/).filter((x) => /\?\s*$/.test(x)).join(" ") || text).matchAll(NAME_RE)]
+          .map((m) => m[1]!)
+          .filter((n) => !NOT_PERSON.has(n)),
+      ),
+    ].slice(0, 4),
     asksFreshness: FRESHNESS_RE.test(withoutRecallDates),
     hasAnaphora: ANAPHORA_RE.test(text),
     refersToPast: PAST_RE.test(text) || hasPast,

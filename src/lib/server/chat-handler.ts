@@ -1,6 +1,16 @@
 import { z } from "zod";
 import { runTurn, type AgentDeps, type TurnEvent } from "../agent/run";
 import { isValidTimeZone } from "../time/dates";
+import { getConfig } from "../env";
+
+function defaultTimeZone(): string {
+  try {
+    const tz = getConfig().DEFAULT_TIMEZONE;
+    return isValidTimeZone(tz) ? tz : "Asia/Kolkata";
+  } catch {
+    return "Asia/Kolkata";
+  }
+}
 import { badRequest, ConversationId, workspaceFrom } from "./http";
 
 
@@ -9,7 +19,8 @@ import { badRequest, ConversationId, workspaceFrom } from "./http";
 const Body = z.object({
   conversationId: ConversationId,
   text: z.string().trim().min(1, "Message is empty").max(8000, "Message is too long (8000 characters max)"),
-  timeZone: z.string().min(1).max(64).refine(isValidTimeZone, "Unknown IANA timezone"),
+  // Optional: falls back to DEFAULT_TIMEZONE (Asia/Kolkata) when absent or invalid.
+  timeZone: z.string().max(64).optional(),
   requestId: z.string().uuid(),
 });
 
@@ -39,7 +50,8 @@ export function chatHandler(getDeps: () => AgentDeps) {
           }
         };
         try {
-          for await (const ev of runTurn(deps, { ...body, workspaceId }, req.signal)) send(ev);
+          const timeZone = body.timeZone && isValidTimeZone(body.timeZone) ? body.timeZone : defaultTimeZone();
+          for await (const ev of runTurn(deps, { ...body, timeZone, workspaceId }, req.signal)) send(ev);
         } catch (e) {
           console.error("[chat] turn failed:", (e as Error).message);
           send({ type: "error", code: "model", message: "Something went wrong while answering. Please retry." });

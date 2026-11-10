@@ -103,7 +103,6 @@ describe("chat route + config", () => {
     const handler = chatHandler(() => deps(memDb(), new FakeProvider()));
     const bad = (body: unknown, ws: string = randomUUID()) =>
       handler(new Request("http://x", { method: "POST", headers: { "x-workspace-id": ws }, body: JSON.stringify(body) }));
-    expect((await bad({ conversationId: randomUUID(), text: "hi", timeZone: "Mars/Base", requestId: randomUUID() })).status).toBe(400);
     expect((await bad({ conversationId: "nope", text: "hi", timeZone: TZ, requestId: randomUUID() })).status).toBe(400);
     expect((await bad({ conversationId: randomUUID(), text: "  ", timeZone: TZ, requestId: randomUUID() })).status).toBe(400);
     expect((await bad({ conversationId: randomUUID(), text: "hi", timeZone: TZ, requestId: randomUUID() }, "not-a-uuid")).status).toBe(400);
@@ -173,5 +172,23 @@ describe("search refusal fallback", () => {
     const [m] = listMemory(db, ws);
     expect(m!.summary).toMatch(/^Unverified/);
     expect(m!.facts.every((f) => f.value.endsWith("(unverified)"))).toBe(true);
+  });
+});
+
+describe("timezone fallback", () => {
+  it("uses the default timezone (Asia/Kolkata) when the client sends none or an invalid one", async () => {
+    const db = memDb();
+    const handler = chatHandler(() => deps(db, new FakeProvider()));
+    const conv = randomUUID();
+    const res = await handler(
+      new Request("http://x", {
+        method: "POST",
+        headers: { "x-workspace-id": randomUUID() },
+        body: JSON.stringify({ conversationId: conv, text: "hello there", timeZone: "Mars/Base", requestId: randomUUID() }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    await res.text();
+    expect(listMessages(db, conv)[0]!.timezone).toBe("Asia/Kolkata");
   });
 });

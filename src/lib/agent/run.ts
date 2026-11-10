@@ -17,6 +17,8 @@ import { DISTILL_SYSTEM, distillUserPrompt, heuristicExtract, parseDistilled } f
 import { retrieve, type Intent, type Retrieval, type ToolChoice } from "../memory/retrieval";
 import { formatLongDate } from "../time/dates";
 import { acquireConversationLock } from "./locks";
+import { ingestUserMessage, type IngestResult } from "../personal/store";
+import { redact } from "../server/log";
 import { buildModelRequest } from "./prompt";
 import type { LlmProvider } from "./provider";
 import { collectSources, type RawSource } from "./sources";
@@ -48,6 +50,7 @@ export type TurnEvent =
   | { type: "reset" }
   | { type: "done"; message: Message; replayed?: boolean }
   | { type: "memory"; items: Array<Pick<MemoryItem, "id" | "title" | "type" | "baselineDate">> }
+  | { type: "personal"; created: Array<{ id: string; type: string; content: string; dueDate: string | null; status: string }>; transitions: Array<{ id: string; content: string; from: string; to: string }> }
   | { type: "error"; code: "config" | "busy" | "model" | "timeout" | "cancelled" | "not_found"; message: string; missingVar?: string };
 
 export interface AgentDeps {
@@ -144,6 +147,25 @@ export async function* runTurn(deps: AgentDeps, input: TurnInput, signal: AbortS
       conversation = { ...conversation, title };
     }
 
+    // Personal memory first (deterministic, no tokens): a completion mentioned in
+    // this very message must already be reflected when we retrieve open loops.
+    let personal: IngestResult | null = null;
+    if (!existingUser) {
+      try {
+        personal = ingestUserMessage(db, {
+          workspaceId: input.workspaceId,
+          conversationId: conversation.id,
+          messageId: userMessage.id,
+          text: input.text,
+          localDate: userMessage.localDate,
+          now: now(),
+          timeZone: input.timeZone,
+        });
+      } catch (e) {
+        console.error(`[memory] extraction failed: ${redact(String((e as Error).message))}`);
+      }
+    }
+
     const retrieval = retrieve(db, {
       workspaceId: input.workspaceId,
       conversationId: conversation.id,
@@ -154,6 +176,13 @@ export async function* runTurn(deps: AgentDeps, input: TurnInput, signal: AbortS
     });
     const memoryMs = Math.round(performance.now() - t0);
     yield { type: "start", userMessage, memory: summarizeRetrieval(retrieval), conversationTitle: conversation.title };
+    if (personal && (personal.created.length || personal.transitions.length)) {
+      yield {
+        type: "personal",
+        created: personal.created.filter((m) => !m.subject.startsWith("evidence:")).map((m) => ({ id: m.id, type: m.type, content: m.content, dueDate: m.dueDate, status: m.status })),
+        transitions: personal.transitions.map((t) => ({ id: t.memory.id, content: t.memory.content, from: t.from, to: t.to })),
+      };
+    }
 
     const request = buildModelRequest({ retrieval, userText: input.text, now: now(), timeZone: input.timeZone });
     if (request.toolChoice === "required") yield { type: "phase", phase: "searching" };
@@ -202,7 +231,7 @@ export async function* runTurn(deps: AgentDeps, input: TurnInput, signal: AbortS
       else {
         failure = errorMessage(e);
         const err = e as { status?: number; message?: string };
-        console.error(`[agent] model error status=${err?.status ?? "-"}: ${String(err?.message ?? e).slice(0, 500)}`);
+        console.error(`[agent] model error status=${err?.status ?? "-"}: ${redact(String(err?.message ?? e)).slice(0, 500)}`);
       }
     } finally {
       clearTimeout(timer);
