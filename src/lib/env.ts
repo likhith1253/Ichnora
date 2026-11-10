@@ -7,16 +7,13 @@ import { z } from "zod";
  * and boots without any API key; chat requests surface a setup error instead.
  */
 const schema = z.object({
-  LLM_PROVIDER: z.enum(["gemini", "openai"]).default("gemini"),
-  GEMINI_API_KEY: z.string().optional(),
-  GEMINI_MODEL: z.string().min(1).default("gemini-3.5-flash-lite"),
-  /** Tried in order when the primary model is overloaded (503) or unavailable (404). */
-  GEMINI_FALLBACK_MODELS: z
-    .string()
-    .default("gemini-3.1-flash-lite")
-    .transform((s) => s.split(",").map((x) => x.trim()).filter(Boolean)),
-  OPENAI_API_KEY: z.string().optional(),
-  OPENAI_MODEL: z.string().min(1).default("gpt-5-mini"),
+  GROQ_API_KEY: z.string().optional(),
+  GROQ_MODEL: z.string().min(1).default("openai/gpt-oss-120b"),
+  /** gpt-oss reasoning effort; change checks are raised to at least "medium". */
+  GROQ_REASONING_EFFORT: z.enum(["low", "medium", "high"]).default("low"),
+  TAVILY_API_KEY: z.string().optional(),
+  /** Hard cap on Tavily queries per answer (1 credit each on the free plan). */
+  MAX_SEARCHES_PER_TURN: z.coerce.number().int().min(1).max(12).default(6),
   MINIMI_DB_PATH: z.string().optional(),
   /** "heuristic" (default, zero extra API calls) or "model" (one small extra call per research turn). */
   MEMORY_DISTILL: z.enum(["heuristic", "model"]).default("heuristic"),
@@ -46,9 +43,8 @@ export function parseDotEnv(text: string): Record<string, string> {
 
 /**
  * Next.js never lets .env files override variables already set on the machine,
- * so a stale system-wide GEMINI_API_KEY would silently shadow the project's key.
- * For this app's own settings, non-empty values in the project's .env.local
- * (then .env) take precedence over the process environment.
+ * so a stale system-wide key would silently shadow the project's key. For this
+ * app's settings, non-empty values in .env.local (then .env) take precedence.
  */
 function projectEnv(): NodeJS.ProcessEnv {
   const merged: Record<string, string | undefined> = { ...process.env };
@@ -65,12 +61,11 @@ function projectEnv(): NodeJS.ProcessEnv {
 
 export function getConfig(env: NodeJS.ProcessEnv = projectEnv()): AppConfig {
   return schema.parse({
-    LLM_PROVIDER: clean(env.LLM_PROVIDER)?.toLowerCase(),
-    GEMINI_API_KEY: clean(env.GEMINI_API_KEY) ?? clean(env.GOOGLE_API_KEY),
-    GEMINI_MODEL: clean(env.GEMINI_MODEL),
-    GEMINI_FALLBACK_MODELS: clean(env.GEMINI_FALLBACK_MODELS),
-    OPENAI_API_KEY: clean(env.OPENAI_API_KEY),
-    OPENAI_MODEL: clean(env.OPENAI_MODEL),
+    GROQ_API_KEY: clean(env.GROQ_API_KEY),
+    GROQ_MODEL: clean(env.GROQ_MODEL),
+    GROQ_REASONING_EFFORT: clean(env.GROQ_REASONING_EFFORT)?.toLowerCase(),
+    TAVILY_API_KEY: clean(env.TAVILY_API_KEY),
+    MAX_SEARCHES_PER_TURN: clean(env.MAX_SEARCHES_PER_TURN),
     MINIMI_DB_PATH: clean(env.MINIMI_DB_PATH),
     MEMORY_DISTILL: clean(env.MEMORY_DISTILL)?.toLowerCase(),
     AGENT_TIMEOUT_MS: clean(env.AGENT_TIMEOUT_MS),
@@ -78,26 +73,27 @@ export function getConfig(env: NodeJS.ProcessEnv = projectEnv()): AppConfig {
 }
 
 export interface ProviderStatus {
-  provider: AppConfig["LLM_PROVIDER"];
+  provider: "groq";
   model: string;
+  search: "tavily";
+  /** Chat works (LLM key present). */
   configured: boolean;
-  /** Name of the env var the user must set — never its value. */
+  /** Live web search works (search key present). */
+  searchConfigured: boolean;
+  /** Missing LLM variable NAME (never a value). */
   missingVar?: string;
+  missingVars: string[];
 }
 
 export function providerStatus(cfg: AppConfig = getConfig()): ProviderStatus {
-  if (cfg.LLM_PROVIDER === "gemini") {
-    return {
-      provider: "gemini",
-      model: cfg.GEMINI_MODEL,
-      configured: Boolean(cfg.GEMINI_API_KEY),
-      missingVar: cfg.GEMINI_API_KEY ? undefined : "GEMINI_API_KEY",
-    };
-  }
+  const missingVars = [...(cfg.GROQ_API_KEY ? [] : ["GROQ_API_KEY"]), ...(cfg.TAVILY_API_KEY ? [] : ["TAVILY_API_KEY"])];
   return {
-    provider: "openai",
-    model: cfg.OPENAI_MODEL,
-    configured: Boolean(cfg.OPENAI_API_KEY),
-    missingVar: cfg.OPENAI_API_KEY ? undefined : "OPENAI_API_KEY",
+    provider: "groq",
+    model: cfg.GROQ_MODEL,
+    search: "tavily",
+    configured: Boolean(cfg.GROQ_API_KEY),
+    searchConfigured: Boolean(cfg.TAVILY_API_KEY),
+    missingVar: cfg.GROQ_API_KEY ? undefined : "GROQ_API_KEY",
+    missingVars,
   };
 }

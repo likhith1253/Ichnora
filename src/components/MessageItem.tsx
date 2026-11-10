@@ -62,12 +62,15 @@ function Sources({ sources }: { sources: Source[] }) {
       <ol>
         {[...verified, ...unverified].map((s) => (
           <li key={s.url} className={s.origin === "answer_link" ? "unverified" : s.origin === "citation" ? "cited" : ""}>
-            <a href={s.url} target="_blank" rel="noopener noreferrer nofollow">
+            <a href={s.url} target="_blank" rel="noopener noreferrer nofollow" title={[s.snippet, s.query ? `Found via: ${s.query}` : ""].filter(Boolean).join(" — ")}>
               <span className="mono" aria-hidden>
                 {s.domain.charAt(0).toUpperCase()}
               </span>
               <span className="src-title">{s.title || s.domain}</span>
-              <span className="src-domain">{s.domain}</span>
+              <span className="src-domain">
+                {s.domain}
+                {s.publishedDate ? ` · ${dateFmt(s.publishedDate)}` : ""}
+              </span>
             </a>
             {s.origin === "answer_link" && <span className="src-flag">not from search results</span>}
           </li>

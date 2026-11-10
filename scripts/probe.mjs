@@ -1,70 +1,103 @@
-// Live diagnostic: one streamed request through the configured provider's single
-// search tool. Prints response *shape* (never the key) so integration details
-// can be verified against the real API. Usage: npm run probe
+// Live diagnostic for the real keys. Checks, without printing any secret:
+//  1. Groq: the model exists for this key and answers.
+//  2. Tavily: one basic search (1 credit) returns results with dates.
+//  3. End to end: Groq calls web_search, we run Tavily, Groq answers with a citation.
+// Usage: npm run probe   (uses .env.local; ~1–3 Tavily credits, ~3 Groq requests)
 import fs from "node:fs";
 import OpenAI from "openai";
 
-for (const f of [".env.local", ".env"]) {
+for (const f of [".env", ".env.local"]) {
   if (!fs.existsSync(f)) continue;
   for (const line of fs.readFileSync(f, "utf8").split(/\r?\n/)) {
-    const m = line.match(/^\s*([A-Z_]+)\s*=\s*(.*)\s*$/);
+    const m = line.match(/^\s*([A-Z_]+)\s*=\s*(.*?)\s*$/);
     // Project file wins over (possibly stale) machine-wide variables, as in the app.
     if (m && m[2].trim()) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
   }
 }
 
-const provider = (process.env.LLM_PROVIDER || "gemini").toLowerCase();
-const question = process.argv.slice(2).join(" ") || "What is the current Node.js LTS release? Cite the official source.";
+const GROQ = process.env.GROQ_API_KEY;
+const TAVILY = process.env.TAVILY_API_KEY;
+const MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
+let failed = false;
+const ok = (m) => console.log(`  ✔ ${m}`);
+const bad = (m) => {
+  failed = true;
+  console.log(`  ✘ ${m}`);
+};
 
-if (provider === "gemini") {
-  const key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-  delete process.env.GOOGLE_API_KEY; // the key is passed explicitly; avoid SDK env warnings
-  if (!key) {
-    console.error("GEMINI_API_KEY is not set (.env.local).");
-    process.exit(1);
-  }
-  const { GoogleGenAI } = await import("@google/genai");
-  const ai = new GoogleGenAI({ apiKey: key });
-  const model = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
-  const t0 = Date.now();
-  let first = null;
-  let text = "";
-  let gm = null;
-  try {
-    const stream = await ai.models.generateContentStream({
-      model,
-      contents: question,
-      config: { tools: [{ googleSearch: {} }], ...(model.startsWith("gemini-2.5") ? { thinkingConfig: { thinkingBudget: 1024 } } : {}) },
-    });
-    for await (const chunk of stream) {
-      const c = chunk.candidates?.[0];
-      if (c?.groundingMetadata?.groundingChunks?.length) gm = c.groundingMetadata;
-      const t = (c?.content?.parts ?? []).filter((p) => p.text && !p.thought).map((p) => p.text).join("");
-      if (t) {
-        first ??= Date.now() - t0;
-        text += t;
-      }
-    }
-    console.log(`[gemini ${model}] OK in ${Date.now() - t0} ms (first token ${first} ms)`);
-    console.log(`  search queries: ${JSON.stringify(gm?.webSearchQueries ?? [])}`);
-    console.log(`  grounding chunks: ${gm?.groundingChunks?.length ?? 0} · supports: ${gm?.groundingSupports?.length ?? 0}`);
-    console.log(`  first source: ${gm?.groundingChunks?.[0]?.web?.title ?? "-"} ${gm?.groundingChunks?.[0]?.web?.uri?.slice(0, 80) ?? ""}`);
-    console.log(`  answer: ${text.slice(0, 300).replace(/\s+/g, " ")}…`);
-    if (!gm) console.log("  WARNING: no grounding metadata — Google Search may not be enabled for this key/model.");
-  } catch (e) {
-    console.log(`[gemini ${model}] FAILED ${e.status ?? ""} ${e.message}`);
-    process.exit(1);
-  }
-} else {
-  if (!process.env.OPENAI_API_KEY) {
-    console.error("OPENAI_API_KEY is not set (.env.local).");
-    process.exit(1);
-  }
-  const model = process.env.OPENAI_MODEL || "gpt-5-mini";
-  const client = new OpenAI();
-  const t0 = Date.now();
-  const r = await client.responses.create({ model, input: question, tools: [{ type: "web_search" }], tool_choice: "auto", include: ["web_search_call.action.sources"], store: false });
-  const calls = r.output.filter((o) => o.type === "web_search_call");
-  console.log(`[openai ${model}] OK in ${Date.now() - t0} ms · searches: ${calls.length} · sources: ${calls.reduce((n, c) => n + (c.action?.sources?.length ?? 0), 0)}`);
-  console.log(`  answer: ${r.output_text.slice(0, 300)}…`);
+const TOOL = {
+  type: "function",
+  function: {
+    name: "web_search",
+    description: "Search the live web.",
+    parameters: { type: "object", properties: { queries: { type: "array", items: { type: "string" }, maxItems: 4 } }, required: ["queries"], additionalProperties: false },
+  },
+};
+
+async function tavily(query) {
+  const res = await fetch("https://api.tavily.com/search", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${TAVILY}` },
+    body: JSON.stringify({ query, search_depth: "basic", max_results: 5, include_published_date: true }),
+  });
+  if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status} ${(await res.text()).slice(0, 160)}`), { status: res.status });
+  return res.json();
 }
+
+console.log("\n[1] Groq");
+if (!GROQ) bad("GROQ_API_KEY is not set in .env.local");
+const groq = GROQ ? new OpenAI({ apiKey: GROQ, baseURL: "https://api.groq.com/openai/v1", maxRetries: 1 }) : null;
+if (groq) {
+  try {
+    const t0 = Date.now();
+    const r = await groq.chat.completions.create({ model: MODEL, messages: [{ role: "user", content: "Reply with the single word: ready" }], max_completion_tokens: 200, reasoning_effort: "low" });
+    ok(`${MODEL} answered in ${Date.now() - t0} ms: "${(r.choices[0]?.message?.content ?? "").trim().slice(0, 40)}"`);
+  } catch (e) {
+    bad(`${MODEL} failed: ${e.status ?? ""} ${String(e.message).slice(0, 200)}`);
+  }
+}
+
+console.log("\n[2] Tavily");
+if (!TAVILY) bad("TAVILY_API_KEY is not set in .env.local");
+else {
+  try {
+    const t0 = Date.now();
+    const j = await tavily("Node.js LTS release schedule");
+    const dated = (j.results ?? []).filter((r) => r.published_date).length;
+    ok(`${j.results?.length ?? 0} results in ${Date.now() - t0} ms (${dated} with published_date)`);
+    if (j.results?.[0]) ok(`top: ${j.results[0].title} — ${j.results[0].url}`);
+  } catch (e) {
+    bad(`search failed: ${e.message}${e.status === 432 ? " (free plan quota exhausted)" : ""}`);
+  }
+}
+
+if (groq && TAVILY && !failed) {
+  console.log("\n[3] End to end (tool call → Tavily → cited answer)");
+  try {
+    const messages = [
+      { role: "system", content: "Use web_search for current facts. Cite with Markdown links to returned URLs." },
+      { role: "user", content: "What is the current Node.js LTS version? One sentence with a citation." },
+    ];
+    const t0 = Date.now();
+    const r1 = await groq.chat.completions.create({ model: MODEL, messages, tools: [TOOL], tool_choice: "required", reasoning_effort: "low", max_completion_tokens: 1000 });
+    const call = r1.choices[0]?.message?.tool_calls?.[0];
+    if (!call) throw new Error("model did not call web_search");
+    const args = JSON.parse(call.function.arguments || "{}");
+    const q = (args.queries ?? [args.query]).filter(Boolean).slice(0, 2);
+    ok(`model called ${call.function.name}(${JSON.stringify(q)})`);
+    const results = await Promise.all(q.map(tavily));
+    const content = results.flatMap((j) => (j.results ?? []).slice(0, 4).map((h) => `- ${h.title}\n  URL: ${h.url}\n  Snippet: ${String(h.content).slice(0, 300)}`)).join("\n");
+    messages.push(r1.choices[0].message, { role: "tool", tool_call_id: call.id, content });
+    const r2 = await groq.chat.completions.create({ model: MODEL, messages, reasoning_effort: "low", max_completion_tokens: 800 });
+    const answer = r2.choices[0]?.message?.content ?? "";
+    ok(`answered in ${Date.now() - t0} ms total`);
+    console.log(`  answer: ${answer.replace(/\s+/g, " ").slice(0, 300)}`);
+    if (/\]\(https?:\/\//.test(answer)) ok("answer contains a citation link");
+    else bad("answer has no citation link");
+  } catch (e) {
+    bad(`end-to-end failed: ${e.status ?? ""} ${String(e.message).slice(0, 220)}`);
+  }
+}
+
+console.log(failed ? "\nSome checks failed." : "\nAll checks passed.");
+process.exit(failed ? 1 : 0);

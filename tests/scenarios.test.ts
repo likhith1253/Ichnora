@@ -245,7 +245,7 @@ describe("Scenario 7 — no API key", () => {
     const db = memDb();
     const ws = randomUUID();
     const { events, conversationId } = await turn(db, null, { workspaceId: ws, text: "hello" });
-    expect(events).toEqual([expect.objectContaining({ type: "error", code: "config", missingVar: "GEMINI_API_KEY" })]);
+    expect(events).toEqual([expect.objectContaining({ type: "error", code: "config", missingVar: "GROQ_API_KEY" })]);
     expect(listMessages(db, conversationId)).toHaveLength(0);
   });
 });
@@ -259,16 +259,11 @@ describe("Scenario 8 — tool surface", () => {
     await turn(db, p, { workspaceId: ws, text: "What is the current price of Notion Plus?" });
     for (const body of p.bodies) {
       if (body.tools !== undefined) assertSingleSearchTool(body.tools as Array<{ type: string }>);
-      expect(JSON.stringify(body)).not.toMatch(/"type":"function"/);
+      const names = ((body.tools ?? []) as Array<{ function: { name: string } }>).map((t) => t.function.name);
+      expect(names.every((n) => n === "web_search")).toBe(true);
     }
     expect(p.bodies[0]!.tools).toBeUndefined(); // greeting: no search
-    expect(p.bodies[1]!.tools).toEqual([{ type: "web_search" }]);
+    expect((p.bodies[1]!.tools as Array<{ function: { name: string } }>).map((t) => t.function.name)).toEqual(["web_search"]);
     expect(p.bodies[1]!.tool_choice).toBe("auto");
-    // Gemini (default provider): same contract with { googleSearch: {} }.
-    for (const g of p.geminiBodies) {
-      if (g.config.tools !== undefined) assertSingleSearchTool(g.config.tools as object[]);
-    }
-    expect(p.geminiBodies[0]!.config.tools).toBeUndefined();
-    expect(p.geminiBodies[1]!.config.tools).toEqual([{ googleSearch: {} }]);
   });
 });

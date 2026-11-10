@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { openDatabase, type DB } from "@/lib/db";
-import { buildGeminiRequest } from "@/lib/agent/gemini";
-import { buildOpenAIRequest, type LlmProvider, type ProviderEvent } from "@/lib/agent/provider";
+import { buildGroqBody, buildGroqMessages } from "@/lib/agent/groq";
+import { type LlmProvider, type ProviderEvent } from "@/lib/agent/provider";
 import type { ModelRequest } from "@/lib/agent/prompt";
 import type { RawSource } from "@/lib/agent/sources";
 import { runTurn, type AgentDeps, type TurnEvent } from "@/lib/agent/run";
@@ -18,7 +18,7 @@ export interface Script {
 
 /**
  * Deterministic stand-in for the LLM at the provider boundary. It records each
- * request and the exact provider bodies that would be sent (OpenAI-style and Gemini), and "searches"
+ * request and the exact Groq request body that would be sent, and "searches"
  * only when the request allows tools — mimicking the real contract.
  */
 export class FakeProvider implements LlmProvider {
@@ -26,7 +26,6 @@ export class FakeProvider implements LlmProvider {
   readonly model = "fake-model";
   requests: ModelRequest[] = [];
   bodies: Array<Record<string, unknown>> = [];
-  geminiBodies: Array<ReturnType<typeof buildGeminiRequest>> = [];
   distillReply = ""; // empty → heuristic extraction
   constructor(private script: (req: ModelRequest) => Script = () => ({ text: "OK." })) {}
 
@@ -36,8 +35,7 @@ export class FakeProvider implements LlmProvider {
 
   async *stream(req: ModelRequest, signal: AbortSignal): AsyncIterable<ProviderEvent> {
     this.requests.push(req);
-    this.bodies.push(buildOpenAIRequest(req, { OPENAI_MODEL: "gpt-5-mini" }));
-    this.geminiBodies.push(buildGeminiRequest(req, { GEMINI_MODEL: "gemini-3.5-flash-lite" }));
+    this.bodies.push(buildGroqBody(buildGroqMessages(req, true), { GROQ_MODEL: "openai/gpt-oss-120b", GROQ_REASONING_EFFORT: "low" }, req.toolChoice));
     const s = this.script(req);
     const canSearch = req.toolChoice !== "none";
     const sources = canSearch ? (s.sources ?? []) : [];
@@ -66,7 +64,7 @@ export function memDb(): DB {
 }
 
 export function deps(db: DB, provider: LlmProvider | null, now: Date = NOW): AgentDeps {
-  return { db, provider, now: () => now, missingVar: provider ? undefined : "GEMINI_API_KEY", modelDistill: true, timeoutMs: 10_000 };
+  return { db, provider, now: () => now, missingVar: provider ? undefined : "GROQ_API_KEY", modelDistill: true, timeoutMs: 10_000 };
 }
 
 export async function collect(gen: AsyncGenerator<TurnEvent>): Promise<TurnEvent[]> {

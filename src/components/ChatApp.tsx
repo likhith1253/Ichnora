@@ -148,6 +148,7 @@ export default function ChatApp() {
           } else if (type === "phase") update({ phase: d.phase as Phase });
           else if (type === "search") update({ phase: "searching", searches: d.query ? [...current.searches, String(d.query)] : current.searches });
           else if (type === "delta") update({ phase: "writing", text: current.text + String(d.text) });
+          else if (type === "reset") update({ text: "", phase: "searching" });
           else if (type === "done") {
             finished = true;
             const assistant = d.message as Message;
@@ -267,9 +268,9 @@ export default function ChatApp() {
         </nav>
         <footer className="side-foot">
           {status && (
-            <span className={`status ${status.configured ? "ok" : "bad"}`}>
+            <span className={`status ${status.configured && status.searchConfigured ? "ok" : "bad"}`}>
               <span className="led" aria-hidden />
-              {status.configured ? `${status.provider} · ${status.model}` : "API key not configured"}
+              {!status.configured ? "GROQ_API_KEY not configured" : status.searchConfigured ? `${status.model} · web search on` : "TAVILY_API_KEY missing · search off"}
             </span>
           )}
         </footer>
@@ -289,6 +290,14 @@ export default function ChatApp() {
 
         <div className="scroll" ref={scrollRef} onScroll={onScroll}>
           <div className="thread">
+            {status?.configured && !status.searchConfigured && (
+              <div className="alert" role="status">
+                <span>
+                  Live web search is off: add <code>TAVILY_API_KEY</code> to <code>.env.local</code> (free at tavily.com). Memory and recall still work; current facts will be
+                  marked unverified.
+                </span>
+              </div>
+            )}
             {empty && (
               <section className="welcome">
                 <h2>
@@ -340,8 +349,8 @@ export default function ChatApp() {
               <div className="alert" role="alert">
                 {error.missingVar ? (
                   <>
-                    <strong>Setup needed.</strong> Add <code>{error.missingVar}</code> to <code>.env.local</code> in the project folder, then restart{" "}
-                    <code>npm run dev</code>. {error.missingVar === "GEMINI_API_KEY" && <>A free key is available at aistudio.google.com/apikey.</>}
+                    <strong>Setup needed.</strong> Add <code>{error.missingVar}</code> to <code>.env.local</code> in the project folder and send your message again (no restart needed).{" "}
+                    {error.missingVar === "GROQ_API_KEY" && <>A free key is available at console.groq.com/keys.</>}
                   </>
                 ) : (
                   <>

@@ -110,4 +110,13 @@ CREATE TABLE turn_metrics (
 );
 `,
   },
+  {
+    version: 2,
+    name: "source_evidence",
+    sql: `
+ALTER TABLE turn_sources ADD COLUMN snippet TEXT;
+ALTER TABLE turn_sources ADD COLUMN published_date TEXT;
+ALTER TABLE turn_sources ADD COLUMN query TEXT;
+`,
+  },
 ];

@@ -5,8 +5,10 @@ export interface RawSource {
   url: string;
   title?: string | null;
   origin: Exclude<SourceOrigin, "answer_link">;
-  /** Publisher domain when the URL is a redirect (e.g. Gemini grounding links). */
-  domain?: string;
+  snippet?: string | null;
+  publishedDate?: string | null;
+  query?: string | null;
+  retrievedAt?: string;
 }
 
 const TRACKING = /^(utm_\w+|gclid|fbclid|mc_eid|mc_cid|ref|ref_src|srsltid)$/i;
@@ -48,7 +50,7 @@ export function answerLinks(text: string): Array<{ url: string; title: string }>
 export function collectSources(raw: RawSource[], answer: string, retrievedAt: string): Source[] {
   const byUrl = new Map<string, Source>();
   const rank: Record<SourceOrigin, number> = { citation: 0, search: 1, answer_link: 2 };
-  const add = (url: string, title: string | null | undefined, origin: SourceOrigin, domain?: string) => {
+  const add = (url: string, title: string | null | undefined, origin: SourceOrigin, extra: Partial<RawSource> = {}) => {
     const n = normalizeUrl(url);
     if (!n) return;
     const prev = byUrl.get(n);
@@ -56,9 +58,18 @@ export function collectSources(raw: RawSource[], answer: string, retrievedAt: st
       if (!prev.title && title) prev.title = title;
       return;
     }
-    byUrl.set(n, { url: n, title: title?.trim() || prev?.title || null, domain: domain || prev?.domain || domainOf(n), retrievedAt, origin });
+    byUrl.set(n, {
+      url: n,
+      title: title?.trim() || prev?.title || null,
+      domain: domainOf(n),
+      retrievedAt: extra.retrievedAt ?? retrievedAt,
+      origin,
+      snippet: extra.snippet ?? prev?.snippet ?? null,
+      publishedDate: extra.publishedDate ?? prev?.publishedDate ?? null,
+      query: extra.query ?? prev?.query ?? null,
+    });
   };
-  for (const s of raw) add(s.url, s.title, s.origin, s.domain);
+  for (const s of raw) add(s.url, s.title, s.origin, s);
   const fromTool = new Set(byUrl.keys());
   for (const l of answerLinks(answer)) {
     const n = normalizeUrl(l.url);
@@ -70,19 +81,4 @@ export function collectSources(raw: RawSource[], answer: string, retrievedAt: st
     } else add(n, l.title, "answer_link");
   }
   return [...byUrl.values()].sort((a, b) => rank[a.origin] - rank[b.origin]).slice(0, 40);
-}
-
-/**
- * gpt-oss browser citations look like 【3†L10-L20】 or 【turn0search3】. Replace
- * them with a Markdown link to the matching search result when we can map the
- * index, otherwise drop the marker (never invent a URL).
- */
-export function rewriteCitationMarkers(text: string, results: RawSource[]): string {
-  return text.replace(/【([^】]{1,60})】/g, (_m, inner: string) => {
-    const idx = inner.match(/(?:search|†?)(\d+)/);
-    const n = idx ? Number(idx[1]) : NaN;
-    const src = Number.isInteger(n) ? results[n] : undefined;
-    if (!src) return "";
-    return ` [${domainOf(src.url)}](${src.url})`;
-  });
 }

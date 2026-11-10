@@ -1,39 +1,45 @@
 # Minimi — Design
 
 ## How it works
-Each user message runs one **turn** (`src/lib/agent/run.ts`), serialised per conversation:
+Each user message runs one **turn** (`src/lib/agent/run.ts`). Turns in the same conversation run one at a time.
 
-1. **Persist** the raw user message (UTC timestamp + the browser's IANA timezone + derived *local* date). Messages are immutable; retries are idempotent via a client `requestId`.
-2. **Analyse & retrieve (deterministic, no LLM)** — `memory/query.ts` parses dates ("3 November", "last Tuesday", "yesterday") in the *user's* timezone and detects recall ("what did I ask…"), freshness ("still correct", "changed since") and pronoun follow-ups. `memory/retrieval.ts` then combines: exact `local_date` lookup → recent thread → turns recalled by the previous reply (carry-over) → FTS5 over memory items and old messages → recent high-value items (shortlists, comparisons). Candidates are scored (same conversation, date match, distinctive-term hits, type, recency); a pronoun with two equally plausible referents yields a *clarify* intent instead of a guess.
-3. **Route** — the application chooses `tool_choice`: `none` for greetings/pure recall/clarification (fast, no search), `required` for "has it changed since?" against a found baseline, `auto` otherwise.
-4. **Prompt** — system rules + authoritative runtime date/timezone + a per-intent directive; retrieved memory goes in a separate, bounded `<memory_context>` block labelled untrusted (delimiters inside data are neutralised). Verbatim original questions, old answers, old source URLs and baseline facts are included so the model compares *then vs now* and labels each item *changed / no change found in checked sources / cannot verify*.
-5. **Model + one tool** — Gemini `gemini-3.5-flash-lite` with Google Search grounding (`{ googleSearch: {} }`) by default; OpenAI Responses + `web_search` by env. If the provider refuses search (Google free tier → 429), the turn is retried without the tool, the model is told it has no web access, and the answer is labelled *web search unavailable* — never presented as verified. `assertSingleSearchTool` enforces that the model only ever receives one search tool; tests check every request body.
-6. **Stream & persist** — SSE to the browser (phase, search queries, text deltas). The final answer, deduplicated sources (with provenance: *search*, *cited*, or *answer link not returned by search* → flagged), and latency metrics are stored.
-7. **Distil memory** before releasing the lock: tables/lists become `shortlist`/`comparison` items with entities and baseline facts (`entity · attribute · value`), always linked to source message ids and the baseline date. A re-check creates a new dated snapshot; the old baseline is never overwritten.
+1. **Persist** the raw user message with its UTC timestamp, the browser's IANA timezone, and the derived *local* date. Messages are immutable. Retries are idempotent via a client `requestId`.
+2. **Analyse and retrieve, in code (no LLM).**
+   - `memory/query.ts` resolves dates ("3 November", "last Tuesday", "yesterday") in the *user's* timezone and detects recall ("what did I ask…"), freshness ("still correct", "changed since") and pronoun follow-ups.
+   - `memory/retrieval.ts` combines: exact `local_date` lookup → recent thread → turns recalled by the previous reply (carry-over) → FTS5 over memory items and old messages → recent high-value items (shortlists, comparisons).
+   - Candidates are scored on same conversation, date match, distinctive-term hits, type and recency. A pronoun with two equally plausible referents yields a *clarify* intent instead of a guess.
+3. **Route.** The application chooses the tool policy: `none` for greetings, pure recall and clarification (fast, no search); `required` for "has it changed since?" against a found baseline; `auto` otherwise.
+4. **Prompt.** System rules, the authoritative runtime date and timezone, and a per-intent directive. Retrieved memory goes in a separate, bounded `<memory_context>` message labelled untrusted; delimiters inside the data are neutralised. It includes the verbatim original questions, old answers, old source URLs and baseline facts, so the model compares *then vs now*. Each item is labelled *changed*, *no change found in checked sources* or *cannot verify*.
+5. **Model and one tool.**
+   - Groq `openai/gpt-oss-120b` is offered exactly one function, `web_search` (`agent/webSearchTool.ts`). `assertSingleSearchTool` enforces this, and tests check every request body.
+   - The tool's implementation is the search layer (`search/tavily.ts`). gpt-oss on Groq has no parallel tool calls, so one call takes up to 4 queries; a five-product check is one round, not five.
+   - `agent/groq.ts` runs a bounded loop: at most 4 model rounds and `MAX_SEARCHES_PER_TURN` queries. URLs are deduplicated across the turn, and the last round has no tools so an answer is guaranteed.
+6. **Stream and persist.** SSE to the browser carries phase, search queries and text deltas. Pre-tool chatter is discarded with a `reset` event. The final answer, sources with provenance (*cited*, *searched*, or *linked but not returned by search*, which is flagged), snippet, published date, query, retrieval timestamp and latency metrics are stored.
+7. **Distil memory** before releasing the lock. Tables and lists become `shortlist`/`comparison` items with entities and baseline facts (`entity · attribute · value`), always linked to source message ids and the baseline date. A re-check creates a new dated snapshot; the old baseline is never overwritten. Values produced without a web check are stored as *unverified*.
 
 ## Why this architecture
-- **Memory is application code, not a tool.** The challenge allows one model tool; it also makes retrieval testable and cheap. Dates in particular are resolved in code — models are unreliable at "last Tuesday" in a given timezone.
+- **Memory is application code, not a tool.** The challenge allows one model tool, and code-side retrieval is testable and cheap. Dates in particular are resolved in code, because models are unreliable at "last Tuesday" in a given timezone.
+- **Groq + Tavily on free tiers.** Google's free Gemini tier refuses Search grounding (verified live: 429 on every model). Groq's hosted `browser_search` has unclear free-tier status. An app-executed `web_search` function backed by Tavily gives a documented free quota, structured results (URL, snippet, published date) and full control over budgets and quota handling.
+- **Owning the tool makes citations auditable.** Every source the model may cite came from our own search call. A link in the answer that search never returned is stored as `answer_link` and shown as unverified.
+- **Budgets for the free tier.** Groq allows about 8K tokens per minute, so memory context, history and snippets are capped, and memory distillation is heuristic by default.
+- **Quota exhaustion degrades instead of failing.** Tavily 432/433 trips a circuit breaker (no retries against an exhausted plan). The model is told search is unavailable, and the answer opens with a warning and carries a *web search unavailable* badge.
 - **SQLite + FTS5** (`better-sqlite3`, WAL): durable, zero-ops, works on Windows, transactional. External-content FTS tables with triggers keep indexes consistent. Migrations are forward-only.
-- **Free tier first.** Google's free tier does not include Search grounding for the Gemini 3.x models available to new keys (verified live: plain calls succeed, Search calls return 429), so the app degrades explicitly instead of failing. Free-tier rate limits shaped the design: deterministic routing avoids search when unnecessary, memory context and history are capped, and memory distillation is heuristic by default (`MEMORY_DISTILL=model` adds a small JSON-only LLM pass).
-- **Citations are attached by code, not written by the model.** Gemini never sees URLs; the app inserts links after the exact sentence each `groundingSupport` covers, using only chunks the search returned — so a citation cannot be fabricated.
-- **A provider boundary** (`agent/provider.ts`, `agent/gemini.ts`) isolates vendor shapes (Gemini `groundingMetadata`, OpenAI `web_search_call` sources) so the agent and tests use one event stream.
 
 ## Alternatives rejected
-- *Memory lookup as a model tool* — violates the one-tool rule and adds a round-trip.
-- *Vector DB / embeddings* — FTS + entity scoring + date indexes pass all scenarios; embeddings would need a second API or local model and are hard to justify without a failing case.
-- *Provider-stored conversations* — not inspectable, not durable under our control.
-- *Second search provider (Tavily, OpenRouter `:online`)* — breaks the one-tool contract; OpenRouter search is also not free.
-- *LLM-based intent classification* — slower, costs tokens on a tight free tier, less predictable than regex + scoring for these patterns.
+- *Memory lookup as a model tool:* violates the one-tool rule and adds a round-trip.
+- *Provider-hosted search (Gemini grounding, Groq `browser_search`, OpenAI `web_search`):* not available or not documented on free tiers, and it hides result metadata we need for provenance.
+- *Vector DB / embeddings:* FTS, entity scoring and date indexes pass all scenarios; embeddings would need another model and are hard to justify without a failing case.
+- *LLM-based intent classification:* slower, spends scarce free-tier tokens, and is less predictable than rules plus scoring for these patterns.
+- *Provider-stored conversations:* not inspectable and not durable under our control.
 
 ## Tradeoffs and limitations
-- Turn serialisation is in-process (single Node server); multi-instance deployment would need a DB-level lock.
+- Turn serialisation is in-process (one Node server). Running several instances would need a lock at the database level.
+- Snippets, not full pages, are the evidence. Pricing pages with dynamic content can yield thin snippets, in which case the model should mark items *cannot verify*.
+- Tavily's `published_date` is an estimate and is often missing for non-news pages.
 - Heuristic distillation captures tables and bold lists well, prose less well.
-- Gemini search cannot be forced (`tool_choice` has no equivalent); change checks rely on an explicit instruction plus a visible "web checked" badge so a missed search is noticeable. `npm run probe` verifies grounding against a live key.
-- Grounding links are Google redirect URLs, so old source URLs in memory are less useful as baselines than publisher URLs would be.
-- Change classification is done by the model from supplied evidence; the app guarantees the baseline and dates, not the model's reading of a pricing page.
 
 ## With another week
-- Live evaluation harness (scored runs of the PRD scenarios against the real model) and per-claim citation checking.
-- Structured "then/now" extraction so the comparison table is computed in code, not prose.
+- A scored live evaluation harness for the PRD scenarios and per-claim citation checking.
+- Structured then/now extraction, so the comparison table is computed in code rather than written as prose.
+- Fetching full official pages for top results (a second internal step behind the same single tool) to get stronger pricing evidence.
 - Optional local embeddings for paraphrased recall ("that database thing").
-- Conflict detection between snapshots and a memory timeline view.

@@ -6,6 +6,9 @@ export interface Source {
   domain: string;
   retrievedAt: string;
   origin: "search" | "citation" | "answer_link";
+  snippet?: string | null;
+  publishedDate?: string | null;
+  query?: string | null;
 }
 
 export interface Message {
@@ -62,6 +65,7 @@ export interface Status {
   provider?: string;
   model?: string;
   configured: boolean;
+  searchConfigured?: boolean;
   missingVar?: string;
   searchTool?: string;
   error?: string;

@@ -3,7 +3,7 @@ import { getConfig, providerStatus } from "../env";
 import { createProvider } from "./provider";
 import type { AgentDeps } from "./run";
 
-/** Production wiring. Config is read per request so .env changes need only a restart. */
+/** Production wiring. Config is re-read per request, so .env.local edits apply without a restart. */
 export function productionDeps(): AgentDeps {
   const cfg = getConfig();
   const status = providerStatus(cfg);

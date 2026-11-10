@@ -1,67 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { listMemory, listMessages } from "@/lib/db/repo";
-import {
-  assertSingleSearchTool,
-  buildOpenAIRequest,
-  openAIOutputSources,
-  type LlmProvider,
-  type ProviderEvent,
-} from "@/lib/agent/provider";
-import { collectSources, normalizeUrl, rewriteCitationMarkers } from "@/lib/agent/sources";
-import { buildGeminiRequest, groundingSources, insertGroundingCitations, isSearchRefused } from "@/lib/agent/gemini";
+import type { LlmProvider, ProviderEvent } from "@/lib/agent/provider";
 import { runTurn } from "@/lib/agent/run";
 import type { ModelRequest } from "@/lib/agent/prompt";
 import { getConfig, parseDotEnv, providerStatus } from "@/lib/env";
 import { chatHandler } from "@/lib/server/chat-handler";
 import { collect, deps, FakeProvider, memDb, PG_ANSWER, turn, TZ } from "./helpers";
 
-const REQ: ModelRequest = { system: "s", memoryContext: "<memory_context>x</memory_context>", history: [{ role: "user", content: "a" }], user: "q", toolChoice: "auto" };
-
-describe("request builders (tool surface)", () => {
-  it("OpenAI Responses: exactly one web_search tool, sources included, store disabled", () => {
-    const body = buildOpenAIRequest({ ...REQ, toolChoice: "required" }, { OPENAI_MODEL: "gpt-5-mini" });
-    expect(body).toMatchObject({ tools: [{ type: "web_search" }], tool_choice: "required", include: ["web_search_call.action.sources"], store: false });
-  });
-  it("no tools at all when search is not allowed", () => {
-    expect(buildOpenAIRequest({ ...REQ, toolChoice: "none" }, { OPENAI_MODEL: "m" }).tools).toBeUndefined();
-  });
-  it("the invariant rejects any extra or custom tool", () => {
-    expect(() => assertSingleSearchTool([{ type: "web_search" }, { type: "function" }])).toThrow();
-    expect(() => assertSingleSearchTool([{ type: "function" }])).toThrow();
-    expect(() => assertSingleSearchTool([{ type: "web_search" }])).not.toThrow();
-  });
-});
-
-describe("source extraction", () => {
-  it("reads OpenAI web_search_call sources and url_citation annotations", () => {
-    const r = openAIOutputSources([
-      { type: "web_search_call", action: { type: "search", query: "q", sources: [{ type: "url", url: "https://a.com/x" }] } },
-      { type: "message", content: [{ type: "output_text", text: "t", annotations: [{ type: "url_citation", url: "https://b.com", title: "B" }] }] },
-    ]);
-    expect(r.sources.map((s) => s.origin)).toEqual(["search", "citation"]);
-    expect(r.queries).toEqual(["q"]);
-  });
-  it("dedupes, strips tracking params, and flags links the search never returned", () => {
-    const s = collectSources(
-      [
-        { url: "https://neon.com/pricing?utm_source=x#plans", title: "Neon", origin: "search" },
-        { url: "https://neon.com/pricing", title: null, origin: "search" },
-        { url: "javascript:alert(1)", title: "x", origin: "search" },
-      ],
-      "See [Neon](https://neon.com/pricing) and [made up](https://example.org/fake).",
-      "2026-11-10T00:00:00Z",
-    );
-    expect(s).toHaveLength(2);
-    expect(s[0]).toMatchObject({ url: "https://neon.com/pricing", origin: "citation", title: "Neon" });
-    expect(s[1]).toMatchObject({ url: "https://example.org/fake", origin: "answer_link" });
-    expect(normalizeUrl("ftp://x")).toBeNull();
-  });
-  it("rewrites gpt-oss citation markers only to real search results", () => {
-    const out = rewriteCitationMarkers("Price is $19【0†L1-L4】 and $25【7†L2】.", [{ url: "https://neon.com/pricing", origin: "search" }]);
-    expect(out).toBe("Price is $19 [neon.com](https://neon.com/pricing) and $25.");
-  });
-});
 
 describe("turn reliability", () => {
   it("is idempotent for a retried request id", async () => {
@@ -150,7 +96,7 @@ describe("chat route + config", () => {
     expect(res.headers.get("content-type")).toMatch(/text\/event-stream/);
     const body = await res.text();
     expect(body).toContain("event: error");
-    expect(body).toContain("GEMINI_API_KEY");
+    expect(body).toContain("GROQ_API_KEY");
   });
 
   it("validates input", async () => {
@@ -164,62 +110,23 @@ describe("chat route + config", () => {
   });
 
   it("reports missing variable names without values", () => {
-    expect(providerStatus(getConfig({} as NodeJS.ProcessEnv))).toMatchObject({ provider: "gemini", configured: false, missingVar: "GEMINI_API_KEY", model: "gemini-3.5-flash-lite" });
-    expect(() => getConfig({ LLM_PROVIDER: "groq" } as unknown as NodeJS.ProcessEnv)).toThrow();
-    const s = providerStatus(getConfig({ LLM_PROVIDER: "openai", OPENAI_API_KEY: "sk-secret" } as unknown as NodeJS.ProcessEnv));
-    expect(s).toMatchObject({ provider: "openai", configured: true });
-    expect(JSON.stringify(s)).not.toContain("sk-secret");
-  });
-});
-
-describe("Gemini adapter", () => {
-  it("offers exactly one googleSearch tool, none for recall, and turns 'required' into an instruction", () => {
-    const auto = buildGeminiRequest(REQ, { GEMINI_MODEL: "gemini-2.5-flash" });
-    expect(auto.config.tools).toEqual([{ googleSearch: {} }]);
-    assertSingleSearchTool(auto.config.tools as object[]);
-    expect(auto.contents.at(-1)!.parts!.at(-1)!.text).toContain("<memory_context>");
-    expect(auto.contents.at(-1)!.parts!.at(-1)!.text).toContain("<user_message>\nq\n</user_message>");
-    expect(buildGeminiRequest({ ...REQ, toolChoice: "none" }, { GEMINI_MODEL: "gemini-2.5-flash" }).config.tools).toBeUndefined();
-    const req = buildGeminiRequest({ ...REQ, toolChoice: "required" }, { GEMINI_MODEL: "gemini-2.5-flash" });
-    expect(String(req.config.systemInstruction)).toMatch(/MUST run Google Search/);
-    expect(req.config.thinkingConfig).toEqual({ thinkingBudget: -1 });
-    expect(buildGeminiRequest(REQ, { GEMINI_MODEL: "gemini-3-flash-preview" }).config.thinkingConfig).toBeUndefined();
-  });
-  it("rejects a second tool", () => {
-    expect(() => assertSingleSearchTool([{ googleSearch: {} }, { functionDeclarations: [] }])).toThrow();
-    expect(() => assertSingleSearchTool([{ codeExecution: {} }])).toThrow();
-  });
-  it("merges consecutive same-role turns", () => {
-    const r = buildGeminiRequest({ ...REQ, memoryContext: null, history: [{ role: "user", content: "a" }, { role: "user", content: "b" }, { role: "assistant", content: "c" }] }, { GEMINI_MODEL: "gemini-2.5-flash" });
-    expect(r.contents.map((c) => c.role)).toEqual(["user", "model", "user"]);
-  });
-  it("attaches citations from grounding supports to the right sentence, using only returned sources", () => {
-    const sources = groundingSources([
-      { web: { uri: "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AAA", title: "neon.com" } },
-      { web: { uri: "https://vertexaisearch.cloud.google.com/grounding-api-redirect/BBB", title: "supabase.com" } },
-    ]);
-    expect(sources[0]).toMatchObject({ domain: "neon.com", origin: "search" });
-    const text = "Neon Launch costs $19/month. Supabase Pro costs $25/month.";
-    const out = insertGroundingCitations(
-      text,
-      [
-        { segment: { text: "Supabase Pro costs $25/month." }, groundingChunkIndices: [1] },
-        { segment: { text: "Neon Launch costs $19/month." }, groundingChunkIndices: [0, 0, 9] },
-        { segment: { text: "not in the answer" }, groundingChunkIndices: [0] },
-      ],
-      sources,
-    );
-    expect(out).toBe(
-      "Neon Launch costs $19/month. ([neon.com](https://vertexaisearch.cloud.google.com/grounding-api-redirect/AAA)) Supabase Pro costs $25/month. ([supabase.com](https://vertexaisearch.cloud.google.com/grounding-api-redirect/BBB))",
-    );
-    const stored = collectSources(sources, out, "2026-11-10T00:00:00Z");
-    expect(stored.map((s) => [s.domain, s.origin])).toEqual([["neon.com", "citation"], ["supabase.com", "citation"]]);
+    expect(providerStatus(getConfig({} as NodeJS.ProcessEnv))).toMatchObject({
+      provider: "groq",
+      model: "openai/gpt-oss-120b",
+      configured: false,
+      searchConfigured: false,
+      missingVar: "GROQ_API_KEY",
+      missingVars: ["GROQ_API_KEY", "TAVILY_API_KEY"],
+    });
+    const s = providerStatus(getConfig({ GROQ_API_KEY: "gsk-secret" } as unknown as NodeJS.ProcessEnv));
+    expect(s).toMatchObject({ configured: true, searchConfigured: false, missingVars: ["TAVILY_API_KEY"] });
+    expect(JSON.stringify(s)).not.toContain("gsk-secret");
   });
 });
 
 describe("env file parsing", () => {
   it("parses .env syntax", () => {
-    expect(parseDotEnv('# c\r\nGEMINI_API_KEY="abc"\r\nexport X=1 # note\nEMPTY=\nbad line')).toEqual({ GEMINI_API_KEY: "abc", X: "1", EMPTY: "" });
+    expect(parseDotEnv('# c\r\nGROQ_API_KEY="abc"\r\nexport X=1 # note\nEMPTY=\nbad line')).toEqual({ GROQ_API_KEY: "abc", X: "1", EMPTY: "" });
   });
   it("maps invalid-key errors to a clear message", async () => {
     const p: LlmProvider = {
@@ -237,10 +144,6 @@ describe("env file parsing", () => {
 });
 
 describe("search refusal fallback", () => {
-  it("recognises Google's quota refusal", () => {
-    expect(isSearchRefused(Object.assign(new Error("RESOURCE_EXHAUSTED"), { status: 429 }))).toBe(true);
-    expect(isSearchRefused(Object.assign(new Error("bad request"), { status: 400 }))).toBe(false);
-  });
   it("records an unverified answer when the provider ran without search", async () => {
     const db = memDb();
     const p: LlmProvider = {

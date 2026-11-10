@@ -19,7 +19,7 @@ import { formatLongDate } from "../time/dates";
 import { acquireConversationLock } from "./locks";
 import { buildModelRequest } from "./prompt";
 import type { LlmProvider } from "./provider";
-import { collectSources, rewriteCitationMarkers, type RawSource } from "./sources";
+import { collectSources, type RawSource } from "./sources";
 
 export interface TurnInput {
   workspaceId: string;
@@ -45,6 +45,7 @@ export type TurnEvent =
   | { type: "phase"; phase: "retrieving" | "thinking" | "searching" | "writing" }
   | { type: "search"; query?: string; count: number }
   | { type: "delta"; text: string }
+  | { type: "reset" }
   | { type: "done"; message: Message; replayed?: boolean }
   | { type: "memory"; items: Array<Pick<MemoryItem, "id" | "title" | "type" | "baselineDate">> }
   | { type: "error"; code: "config" | "busy" | "model" | "timeout" | "cancelled" | "not_found"; message: string; missingVar?: string };
@@ -77,7 +78,7 @@ function errorMessage(e: unknown): { code: "model" | "timeout"; message: string 
   if (err?.status === 401 || err?.status === 403 || /api[ _-]?key (not valid|invalid)|API_KEY_INVALID/i.test(err?.message ?? ""))
     return { code: "model", message: "The API key was rejected. Check the key in .env.local (it takes priority over system-wide variables) and try again." };
   if (err?.status === 429 || err?.status === 413) return { code: "model", message: "The model provider's rate limit was reached (free tiers allow only a few requests per minute). Wait about a minute and retry." };
-  if (err?.status === 404) return { code: "model", message: "The configured model was not found (404). Check GEMINI_MODEL / OPENAI_MODEL (`npm run models` lists the models your key can use)." };
+  if (err?.status === 404) return { code: "model", message: "The configured model was not found (404). Check GROQ_MODEL in .env.local." };
   if (err?.status === 503) return { code: "model", message: "The model is overloaded right now (503). Please retry in a moment." };
   if (err?.status && err.status >= 500) return { code: "model", message: `The model provider had an error (${err.status}). Please retry.` };
   return { code: "model", message: "The model request failed. Please retry." };
@@ -181,6 +182,9 @@ export async function* runTurn(deps: AgentDeps, input: TurnInput, signal: AbortS
         } else if (ev.type === "search") {
           searches++;
           yield { type: "search", query: ev.query, count: searches };
+        } else if (ev.type === "reset") {
+          text = "";
+          yield { type: "reset" };
         } else if (ev.type === "phase") {
           yield { type: "phase", phase: ev.phase };
         } else if (ev.type === "done") {
@@ -203,7 +207,7 @@ export async function* runTurn(deps: AgentDeps, input: TurnInput, signal: AbortS
 
     if (!failure && !text.trim()) failure = { code: "model", message: "The model returned an empty answer. Please retry." };
 
-    const finalText = rewriteCitationMarkers(text, raw).trim();
+    const finalText = text.trim();
     const createdAt = now();
     const status = failure ? (failure.code === "cancelled" ? "cancelled" : "error") : "complete";
     const assistant = insertMessage(db, {

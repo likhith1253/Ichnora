@@ -15,6 +15,12 @@ export interface Source {
   domain: string;
   retrievedAt: string;
   origin: SourceOrigin;
+  /** Search snippet shown to the model (untrusted). */
+  snippet?: string | null;
+  /** Publisher date estimated by the search engine (YYYY-MM-DD). */
+  publishedDate?: string | null;
+  /** The search query that surfaced this source. */
+  query?: string | null;
 }
 
 export const MessageMetadataSchema = z
@@ -268,11 +274,11 @@ function withSources(db: DB, rows: MessageRow[]): Message[] {
   const ids = rows.map((r) => r.id);
   const srcRows = db
     .prepare(`SELECT * FROM turn_sources WHERE message_id IN (${ids.map(() => "?").join(",")}) ORDER BY id`)
-    .all(...ids) as Array<{ message_id: string; url: string; title: string | null; domain: string; retrieved_at: string; origin: SourceOrigin }>;
+    .all(...ids) as Array<{ message_id: string; url: string; title: string | null; domain: string; retrieved_at: string; origin: SourceOrigin; snippet: string | null; published_date: string | null; query: string | null }>;
   const byMsg = new Map<string, Source[]>();
   for (const s of srcRows) {
     const list = byMsg.get(s.message_id) ?? [];
-    list.push({ url: s.url, title: s.title, domain: s.domain, retrievedAt: s.retrieved_at, origin: s.origin });
+    list.push({ url: s.url, title: s.title, domain: s.domain, retrievedAt: s.retrieved_at, origin: s.origin, snippet: s.snippet, publishedDate: s.published_date, query: s.query });
     byMsg.set(s.message_id, list);
   }
   return rows.map((r) => toMessage(r, byMsg.get(r.id) ?? []));
@@ -331,10 +337,10 @@ export function searchMessages(db: DB, workspaceId: string, ftsQuery: string, li
 
 export function insertSources(db: DB, messageId: string, sources: Source[]): void {
   const stmt = db.prepare(
-    "INSERT OR IGNORE INTO turn_sources(message_id, url, title, domain, retrieved_at, origin) VALUES (?, ?, ?, ?, ?, ?)",
+    "INSERT OR IGNORE INTO turn_sources(message_id, url, title, domain, retrieved_at, origin, snippet, published_date, query) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
   );
   db.transaction(() => {
-    for (const s of sources) stmt.run(messageId, s.url, s.title, s.domain, s.retrievedAt, s.origin);
+    for (const s of sources) stmt.run(messageId, s.url, s.title, s.domain, s.retrievedAt, s.origin, s.snippet ?? null, s.publishedDate ?? null, s.query ?? null);
   })();
 }
 
