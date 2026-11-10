@@ -182,7 +182,7 @@ describe("decision history and contradictions", () => {
       ["2026-11-07", "chosen", "ACTIVE"],
     ]);
     const final = tl!.entries[2]!;
-    expect(final.memory.alternatives).toContain("mongodb");
+    expect(final.memory.alternatives).toContain("MongoDB");
     expect(final.links.some((l) => l.relation === "CONTRADICTS")).toBe(true);
     expect(tl!.entries[1]!.memory.rationale).toBe("of joins");
   });

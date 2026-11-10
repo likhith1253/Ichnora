@@ -135,7 +135,11 @@ export function extractObservations(answer: string, sources: Source[], observedO
       const tier = kinds.indexOf("tier") >= 0 ? (row[kinds.indexOf("tier")] ?? null) : null;
       kinds.forEach((k, i) => {
         if (k !== "price" && k !== "release") return;
-        const value = row[i]?.trim();
+        // Drop citation labels that the table cell carried, e.g. "(hubspot.com)" or "(hubspot.com, g2.com)".
+        const value = row[i]
+          ?.replace(/\s*\((?:\s*[a-z0-9-]+(?:\.[a-z0-9-]+)+\s*,?)+\)\s*/gi, " ")
+          .replace(/\s+/g, " ")
+          .trim();
         if (!value || value === "-" || value.length > 300) return;
         const header = t.headers[i] ?? "";
         const price = k === "price" ? parsePrice(value, header) : { amount: null, currency: null, period: null, billing: null, unit: null };

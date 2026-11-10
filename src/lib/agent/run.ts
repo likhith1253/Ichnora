@@ -84,7 +84,9 @@ function errorMessage(e: unknown): { code: "model" | "timeout"; message: string 
   if (err?.name === "TimeoutError" || /timed? ?out/i.test(err?.message ?? "")) return { code: "timeout", message: "The model took too long to respond. Please try again." };
   if (err?.status === 401 || err?.status === 403 || /api[ _-]?key (not valid|invalid)|API_KEY_INVALID/i.test(err?.message ?? ""))
     return { code: "model", message: "The API key was rejected. Check the key in .env.local (it takes priority over system-wide variables) and try again." };
-  if (err?.status === 429 || err?.status === 413) return { code: "model", message: "The model provider's rate limit was reached (free tiers allow only a few requests per minute). Wait about a minute and retry." };
+  if (err?.status === 429 && /tokens per day|\(TPD\)|requests per day|\(RPD\)/i.test(err?.message ?? ""))
+    return { code: "model", message: "The model's free daily limit has been used up (Groq free tier: about 200K tokens or 1,000 requests per day). It resets within 24 hours — memory, open loops and history remain available in the Open loops and Memory views." };
+  if (err?.status === 429 || err?.status === 413) return { code: "model", message: "The model provider's per-minute rate limit was reached (free tier ≈ 8K tokens per minute). Wait about a minute and retry." };
   if (err?.status === 404) return { code: "model", message: "The configured model was not found (404). Check GROQ_MODEL in .env.local." };
   if (err?.status === 503) return { code: "model", message: "The model is overloaded right now (503). Please retry in a moment." };
   if (err?.status && err.status >= 500) return { code: "model", message: `The model provider had an error (${err.status}). Please retry.` };

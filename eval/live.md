@@ -336,3 +336,9 @@ No other reasons or alternatives were recorded beyond the brief mention of “mo
 There is no saved user message for that date. I have no record of a question you asked on 20 October 2026.
 
 </details>
+
+---
+
+## Run 3 (after the `[n]` citation fix) — partial
+
+A third live run was started after source-numbered citations (`[n]` → exact URL) and the final-round tool-history folding were added. The first turn (CRM shortlist) completed in 8.9 s with **5 cited official sources and claim coverage 0.31**, up from 0 cited in runs 1–2. The remaining turns hit Groq's free-tier **daily** token limit (200K tokens/day), exhausted by the three live runs of the day. The app reported the limit instead of failing silently, and this run also led to separate daily-limit and per-minute-limit error messages. The report above is the last complete run (run 2), kept unedited.

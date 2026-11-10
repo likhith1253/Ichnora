@@ -80,3 +80,30 @@ Scope: the whole repository at commit `a06bd61` (~3.7K lines of TS in `src/`, 79
 6. Evaluation suite and live evals
 7. UI redesign and browser QA
 8. Docs
+
+## 9. Resolution status (after the improvement phases)
+| # | Status | Where |
+|---|---|---|
+| D1 personal memory | Fixed: typed memories with quotes, links, events; open loops and decision timelines | `lib/personal/*`, migration v3 |
+| D2 snippet-only evidence | Fixed: selective Tavily Extract of official pricing/changelog pages, labelled full page vs snippet | `agent/webSearchTool.ts`, `research/rank.ts` |
+| D3 official sources | Fixed: vendor-domain and page-type provenance; third-party never labelled official (precision 1.0 on fixtures) | `research/official.ts` |
+| D4 prose-only comparison | Fixed: normalised observations and an app-computed then/now report (CHANGED / NO MATERIAL CHANGE FOUND / UNABLE TO VERIFY) | `research/observations.ts` |
+| D5 single date | Fixed: observed, published and effective dates stored separately | migration v4 `observations` |
+| D6 no entity model | Fixed: `entities` and `entity_mentions` with aliases; person-scoped open loops | `personal/store.ts` |
+| D7 past-only date parser | Fixed: future-aware deadline resolver; no deadline without a cue | `time/due.ts` |
+| D8 unpersisted budget | Fixed: credit ledger synced from Tavily `/usage`, reserve for change checks | `search/budget.ts` |
+| D9 no TPM pacing | Fixed: token gate plus real usage logging; separate daily and per-minute limit messages | `agent/rateGate.ts` |
+| D10 no claim evidence | Fixed: `[n]` source IDs resolved to exact URLs, unknown links stripped, claim→source rows, coverage metric | `agent/sources.ts`, `research/claims.ts` |
+| D11 privacy | Fixed: export, forget-everything, documented cascade deletion, log redaction | `server/export.ts`, `server/log.ts` |
+| D12 unbounded lists | Partly fixed: personal-memory APIs paginated; a conversation still loads all its messages | `api/personal` |
+| D13 default timezone | Fixed: `DEFAULT_TIMEZONE` (Asia/Kolkata) fallback | `server/chat-handler.ts` |
+
+New defects found during evaluation and fixed (each with a regression test):
+- duplicate snapshots of the same shortlist treated as ambiguous
+- "what did I ask today?" routed as a freshness check
+- deadline words used as event dates
+- person filter taken from statements rather than the question
+- gpt-oss `【n】` markers dropped
+- citations written as "(search snippet)" labels instead of links
+- stray tool calls on the final round
+- daily-limit 429 misreported as a per-minute limit

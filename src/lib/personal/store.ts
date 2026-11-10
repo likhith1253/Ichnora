@@ -207,7 +207,11 @@ function applyCandidate(db: DB, ctx: Ctx, c: Candidate, out: IngestResult): void
     const sameChoiceLive = prior.find((p) => p.status !== "SUPERSEDED" && choiceOf(p) === newChoice && p.kind === c.kind);
     if (sameChoiceLive) return reinforce(db, ctx, sameChoiceLive, c, out);
     // Alternatives = other options the user actually discussed for this subject.
-    const alternatives = [...new Set([...c.alternatives, ...prior.map((p) => choiceOf(p)).filter((x) => x && x !== newChoice)])];
+    // Keep the user's own spelling ("MongoDB"), dedupe case-insensitively.
+    const display = (m: Memory) => m.content.match(/^(?:Chose|Considering|Rejected)\s+(.+?)\s+for\s+/)?.[1] ?? "";
+    const altMap = new Map<string, string>();
+    for (const a of [...c.alternatives, ...prior.map(display)]) if (a && a.toLowerCase() !== newChoice) altMap.set(a.toLowerCase(), altMap.get(a.toLowerCase()) ?? a);
+    const alternatives = [...altMap.values()];
     const created = insert(db, ctx, c, { alternatives });
     out.created.push(created);
     for (const p of prior.filter((p) => p.status === "ACTIVE" || p.status === "CONSIDERING")) {

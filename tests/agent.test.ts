@@ -192,3 +192,21 @@ describe("timezone fallback", () => {
     expect(listMessages(db, conv)[0]!.timezone).toBe("Asia/Kolkata");
   });
 });
+
+describe("rate-limit messages", () => {
+  const failing = (message: string): LlmProvider => ({
+    name: "fake",
+    model: "m",
+    // eslint-disable-next-line require-yield
+    async *stream(): AsyncIterable<ProviderEvent> {
+      throw Object.assign(new Error(message), { status: 429 });
+    },
+    complete: async () => "",
+  });
+  it("distinguishes the daily limit from the per-minute limit", async () => {
+    const day = await turn(memDb(), failing("429 Rate limit reached for model on tokens per day (TPD): Limit 200000"), { workspaceId: randomUUID(), text: "price of notion" });
+    expect((day.events.at(-1) as { message: string }).message).toMatch(/daily limit/);
+    const min = await turn(memDb(), failing("429 Rate limit reached on tokens per minute (TPM)"), { workspaceId: randomUUID(), text: "price of notion" });
+    expect((min.events.at(-1) as { message: string }).message).toMatch(/per-minute/);
+  });
+});
