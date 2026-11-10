@@ -14,6 +14,13 @@ const schema = z.object({
   TAVILY_API_KEY: z.string().optional(),
   /** Hard cap on Tavily queries per answer (1 credit each on the free plan). */
   MAX_SEARCHES_PER_TURN: z.coerce.number().int().min(1).max(12).default(6),
+  /** Full-page reads (Tavily Extract) per answer; 1 credit per 5 successful pages. */
+  MAX_EXTRACTS_PER_TURN: z.coerce.number().int().min(0).max(6).default(3),
+  /** Monthly Tavily credits on the plan, and how many to keep for change checks. */
+  TAVILY_MONTHLY_CREDITS: z.coerce.number().int().min(1).default(1000),
+  TAVILY_RESERVE_CREDITS: z.coerce.number().int().min(0).default(100),
+  /** Groq tokens-per-minute limit used for pacing (free tier: 8000). */
+  GROQ_TPM_LIMIT: z.coerce.number().int().min(1000).default(8000),
   MINIMI_DB_PATH: z.string().optional(),
   /** Used when the browser does not send a valid IANA timezone. */
   DEFAULT_TIMEZONE: z.string().min(1).default("Asia/Kolkata"),
@@ -68,6 +75,10 @@ export function getConfig(env: NodeJS.ProcessEnv = projectEnv()): AppConfig {
     GROQ_REASONING_EFFORT: clean(env.GROQ_REASONING_EFFORT)?.toLowerCase(),
     TAVILY_API_KEY: clean(env.TAVILY_API_KEY),
     MAX_SEARCHES_PER_TURN: clean(env.MAX_SEARCHES_PER_TURN),
+    MAX_EXTRACTS_PER_TURN: clean(env.MAX_EXTRACTS_PER_TURN),
+    TAVILY_MONTHLY_CREDITS: clean(env.TAVILY_MONTHLY_CREDITS),
+    TAVILY_RESERVE_CREDITS: clean(env.TAVILY_RESERVE_CREDITS),
+    GROQ_TPM_LIMIT: clean(env.GROQ_TPM_LIMIT),
     MINIMI_DB_PATH: clean(env.MINIMI_DB_PATH),
     DEFAULT_TIMEZONE: clean(env.DEFAULT_TIMEZONE),
     MEMORY_DISTILL: clean(env.MEMORY_DISTILL)?.toLowerCase(),

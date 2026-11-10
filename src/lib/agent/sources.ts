@@ -9,6 +9,9 @@ export interface RawSource {
   publishedDate?: string | null;
   query?: string | null;
   retrievedAt?: string;
+  official?: boolean;
+  evidenceLevel?: "snippet" | "full_page";
+  sourceNo?: number;
 }
 
 const TRACKING = /^(utm_\w+|gclid|fbclid|mc_eid|mc_cid|ref|ref_src|srsltid)$/i;
@@ -67,6 +70,9 @@ export function collectSources(raw: RawSource[], answer: string, retrievedAt: st
       snippet: extra.snippet ?? prev?.snippet ?? null,
       publishedDate: extra.publishedDate ?? prev?.publishedDate ?? null,
       query: extra.query ?? prev?.query ?? null,
+      official: extra.official ?? prev?.official ?? false,
+      evidenceLevel: extra.evidenceLevel ?? prev?.evidenceLevel ?? "snippet",
+      sourceNo: extra.sourceNo ?? prev?.sourceNo ?? null,
     });
   };
   for (const s of raw) add(s.url, s.title, s.origin, s);

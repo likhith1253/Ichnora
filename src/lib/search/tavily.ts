@@ -1,4 +1,4 @@
-import type { SearchHit, SearchOutcome, SearchProvider, SearchQuery } from "./types";
+import type { Extraction, ExtractOutcome, SearchHit, SearchOutcome, SearchProvider, SearchQuery } from "./types";
 
 /**
  * Tavily Search API (https://docs.tavily.com). Free plan: 1,000 credits/month,
@@ -120,4 +120,57 @@ export class TavilySearch implements SearchProvider {
     }
     return { query: q.query, hits };
   }
+
+  /**
+   * Tavily Extract with a query: returns the most relevant chunks of each page
+   * (not the whole page), which keeps evidence specific and token-cheap.
+   * Cost: 1 credit per 5 *successful* basic extractions; failures are free.
+   */
+  async extract(urls: string[], query: string, signal: AbortSignal): Promise<ExtractOutcome> {
+    const now = this.opts.now ?? (() => new Date());
+    if (breaker.until > now().getTime() && breaker.kind) return { pages: [], error: { kind: breaker.kind, message: breaker.message } };
+    if (urls.length === 0) return { pages: [] };
+    let res: Response;
+    try {
+      res = await (this.opts.fetchImpl ?? fetch)(EXTRACT_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${this.apiKey}` },
+        body: JSON.stringify({ urls: urls.slice(0, 5), query: query.slice(0, 400), chunks_per_source: 3, extract_depth: "basic", format: "text", timeout: 15 }),
+        signal,
+      });
+    } catch (e) {
+      if (signal.aborted) throw e;
+      return { pages: urls.map((url) => ({ url, ok: false, content: "", retrievedAt: now().toISOString(), error: "network" })), error: { kind: "failed", message: "Page extraction failed (network)." } };
+    }
+    if (!res.ok) {
+      if (res.status === 432 || res.status === 433) {
+        breaker.until = now().getTime() + 6 * 3600_000;
+        breaker.kind = "quota";
+        breaker.message = "The free Tavily quota is used up for now.";
+        return { pages: [], error: { kind: "quota", message: breaker.message } };
+      }
+      return { pages: [], error: { kind: res.status === 429 ? "rate_limit" : res.status === 401 ? "auth" : "failed", message: `Page extraction failed (${res.status}).` } };
+    }
+    const retrievedAt = now().toISOString();
+    let json: { results?: Array<{ url?: unknown; raw_content?: unknown }>; failed_results?: Array<{ url?: unknown; error?: unknown }> };
+    try {
+      json = (await res.json()) as typeof json;
+    } catch {
+      return { pages: [], error: { kind: "failed", message: "Extraction returned malformed data." } };
+    }
+    const pages: Extraction[] = [];
+    for (const r of json.results ?? []) {
+      if (typeof r.url !== "string" || typeof r.raw_content !== "string") continue;
+      const content = r.raw_content.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+      pages.push({ url: r.url, ok: content.length > 40, content: content.slice(0, EXTRACT_CHARS), retrievedAt });
+    }
+    for (const f of json.failed_results ?? []) {
+      if (typeof f.url === "string") pages.push({ url: f.url, ok: false, content: "", retrievedAt, error: typeof f.error === "string" ? f.error.slice(0, 120) : "failed" });
+    }
+    return { pages };
+  }
 }
+
+const EXTRACT_ENDPOINT = "https://api.tavily.com/extract";
+/** Per-page cap on extracted text passed on (≈350 tokens). */
+const EXTRACT_CHARS = 1400;

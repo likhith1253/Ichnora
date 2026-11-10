@@ -7,9 +7,10 @@ import type { AgentDeps } from "./run";
 export function productionDeps(): AgentDeps {
   const cfg = getConfig();
   const status = providerStatus(cfg);
+  const db = getDb();
   return {
-    db: getDb(),
-    provider: createProvider(cfg),
+    db,
+    provider: createProvider(cfg, db),
     missingVar: status.missingVar,
     timeoutMs: cfg.AGENT_TIMEOUT_MS,
     modelDistill: cfg.MEMORY_DISTILL === "model",

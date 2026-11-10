@@ -22,6 +22,10 @@ import { redact } from "../server/log";
 import { buildModelRequest } from "./prompt";
 import type { LlmProvider } from "./provider";
 import { collectSources, type RawSource } from "./sources";
+import type { Extraction } from "../search/types";
+import { mapClaims } from "../research/claims";
+import { compareObservations, extractObservations } from "../research/observations";
+import { saveChangeReport, saveClaims, saveExtractions, saveObservations, snapshotObservations, type ChangeReport } from "../research/ledger";
 
 export interface TurnInput {
   workspaceId: string;
@@ -199,6 +203,8 @@ export async function* runTurn(deps: AgentDeps, input: TurnInput, signal: AbortS
     let searches = 0;
     let searchUnavailable = false;
     let modelUsed = provider.model;
+    let extractions: Extraction[] = [];
+    let usage: { promptTokens: number; completionTokens: number; rounds: number; waitedMs: number } | null = null;
     let firstTokenMs: number | null = null;
     let failure: { code: "model" | "timeout" | "cancelled"; message: string } | null = null;
 
@@ -222,6 +228,8 @@ export async function* runTurn(deps: AgentDeps, input: TurnInput, signal: AbortS
           queries = ev.searchQueries;
           searchUnavailable = Boolean(ev.searchUnavailable);
           if (ev.model) modelUsed = ev.model;
+          extractions = ev.extractions ?? [];
+          usage = ev.usage ?? null;
           searches = Math.max(searches, queries.length, raw.length > 0 ? 1 : 0);
         }
       }
@@ -243,6 +251,27 @@ export async function* runTurn(deps: AgentDeps, input: TurnInput, signal: AbortS
     const finalText = text.trim();
     const createdAt = now();
     const status = failure ? (failure.code === "cancelled" ? "cancelled" : "error") : "complete";
+
+    // Evidence ledger: validated sources → claim links → normalised observations →
+    // a then/now comparison computed in code for change checks.
+    const sources = collectSources(raw, finalText, createdAt.toISOString());
+    const claims = failure ? null : mapClaims(finalText, sources);
+    const currentObs = failure
+      ? []
+      : extractObservations(finalText, sources, userMessage.localDate).map((o) => (searchUnavailable ? { ...o, evidenceLevel: "recollection" as const, sourceUrl: null } : o));
+    let changeReport: ChangeReport | null = null;
+    if (!failure && retrieval.intent === "recall_and_verify" && retrieval.referent) {
+      const baseline = snapshotObservations(db, retrieval.referent);
+      if (baseline.length) {
+        changeReport = {
+          baselineSnapshotId: retrieval.referent.id,
+          baselineDate: retrieval.referent.baselineDate,
+          checkedOn: userMessage.localDate,
+          rows: compareObservations(baseline, currentObs, userMessage.localDate),
+        };
+      }
+    }
+    const extractedOk = extractions.filter((x) => x.ok).length;
     const assistant = insertMessage(db, {
       conversationId: conversation.id,
       workspaceId: input.workspaceId,
@@ -266,11 +295,16 @@ export async function* runTurn(deps: AgentDeps, input: TurnInput, signal: AbortS
           ]),
         ].slice(0, 10),
         model: modelUsed,
+        ...(claims ? { claimCoverage: claims.coverage, citedClaims: claims.citedFactualClaims, factualClaims: claims.factualClaims } : {}),
+        ...(extractions.length ? { pagesRead: extractedOk, pagesFailed: extractions.length - extractedOk } : {}),
+        ...(changeReport ? { changeReport } : {}),
         ...(failure ? { error: failure.message } : {}),
       },
     });
-    const sources = collectSources(raw, finalText, createdAt.toISOString());
     insertSources(db, assistant.id, sources);
+    if (extractions.length) saveExtractions(db, assistant.id, extractions);
+    if (claims?.claims.length) saveClaims(db, assistant.id, claims.claims);
+    if (changeReport) saveChangeReport(db, assistant.id, changeReport);
     insertMetrics(db, assistant.id, {
       intent: retrieval.intent,
       toolChoice: retrieval.toolChoice,
@@ -279,6 +313,10 @@ export async function* runTurn(deps: AgentDeps, input: TurnInput, signal: AbortS
       totalMs: Math.round(performance.now() - t0),
       memoryMs,
       model: modelUsed,
+      promptTokens: usage?.promptTokens ?? null,
+      completionTokens: usage?.completionTokens ?? null,
+      searchCredits: queries.length + Math.ceil(extractedOk / 5),
+      rounds: usage?.rounds ?? null,
     });
 
     if (failure) {
@@ -325,6 +363,8 @@ export async function* runTurn(deps: AgentDeps, input: TurnInput, signal: AbortS
           : i,
       ),
     );
+    // Dated observations for the new snapshot: tomorrow's baseline.
+    if (saved[0] && currentObs.length) saveObservations(db, { workspaceId: input.workspaceId, snapshotId: saved[0].id, messageId: assistant.id }, currentObs);
     yield { type: "memory", items: saved.map((m) => ({ id: m.id, title: m.title, type: m.type, baselineDate: m.baselineDate })) };
   } finally {
     release?.();

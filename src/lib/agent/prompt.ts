@@ -16,6 +16,10 @@ export interface ModelRequest {
   history: ChatTurn[];
   user: string;
   toolChoice: "auto" | "required" | "none";
+  /** Entity names from memory (e.g. a recalled shortlist) used for official-source matching. */
+  entities?: string[];
+  /** User's local date (YYYY-MM-DD) — for freshness ranking. */
+  today?: string;
 }
 
 const BASE_RULES = `You are Minimi, a fast, careful research assistant with long-term memory of this user's past conversations.
@@ -103,5 +107,6 @@ ${ctx}
     content: sanitizeUntrusted(m.content, m.role === "assistant" ? 1500 : 800),
   }));
 
-  return { system, memoryContext, history, user: opts.userText, toolChoice: r.toolChoice };
+  const entities = [...new Set([...(r.referent?.entities ?? []), ...r.memory.flatMap((m) => m.entities)])].slice(0, 20);
+  return { system, memoryContext, history, user: opts.userText, toolChoice: r.toolChoice, entities, today };
 }

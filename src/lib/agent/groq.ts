@@ -1,10 +1,11 @@
 import OpenAI from "openai";
 import type { AppConfig } from "../env";
-import type { SearchHit, SearchProvider } from "../search/types";
+import type { Extraction, SearchProvider } from "../search/types";
 import type { ModelRequest } from "./prompt";
 import { assertSingleSearchTool, type LlmProvider, type ProviderEvent } from "./provider";
 import { linkifyKnownUrls, rewriteCitationMarkers, type RawSource } from "./sources";
-import { runWebSearch, WEB_SEARCH_TOOL } from "./webSearchTool";
+import { runWebSearch, WEB_SEARCH_TOOL, type Evidence } from "./webSearchTool";
+import { sharedGate, TokenGate } from "./rateGate";
 
 /**
  * Groq chat-completions adapter (OpenAI-compatible API) running a bounded
@@ -80,15 +81,18 @@ function toolUseFailed(e: unknown): boolean {
   return (err?.status === undefined || err.status === 400) && /tool_use_failed|tool call validation|did not match schema|did not call a tool|Tool choice is required/i.test(`${err?.message ?? ""} ${err?.error?.code ?? ""}`);
 }
 
-export function hitsToSources(hits: SearchHit[]): RawSource[] {
-  return hits.map((h) => ({
-    url: h.url,
-    title: h.title,
+export function evidenceToSources(evidence: Evidence[]): RawSource[] {
+  return evidence.map((e) => ({
+    url: e.url,
+    title: e.title,
     origin: "search" as const,
-    snippet: h.snippet,
-    publishedDate: h.publishedDate,
-    query: h.query,
-    retrievedAt: h.retrievedAt,
+    snippet: e.excerpt ? e.excerpt.slice(0, 600) : e.snippet,
+    publishedDate: e.publishedDate,
+    query: e.query,
+    retrievedAt: e.retrievedAt,
+    official: e.official,
+    evidenceLevel: e.evidenceLevel,
+    sourceNo: e.sourceNo,
   }));
 }
 
@@ -98,12 +102,17 @@ export class GroqProvider implements LlmProvider {
   private client: ChatClient;
   private raw: OpenAI | null = null;
 
+  private gate: TokenGate;
+
   constructor(
     private cfg: AppConfig,
     private search: SearchProvider | null,
     client?: ChatClient,
+    gate?: TokenGate,
   ) {
     this.model = cfg.GROQ_MODEL;
+    // Injected (test) clients get a private, unbounded gate; production shares one per process.
+    this.gate = gate ?? (client ? new TokenGate(Number.MAX_SAFE_INTEGER) : sharedGate(cfg.GROQ_TPM_LIMIT));
     if (client) this.client = client;
     else {
       const raw = new OpenAI({ apiKey: cfg.GROQ_API_KEY, baseURL: "https://api.groq.com/openai/v1", maxRetries: 2, timeout: cfg.AGENT_TIMEOUT_MS });
@@ -118,9 +127,15 @@ export class GroqProvider implements LlmProvider {
     const messages = buildGroqMessages(req, searchAvailable);
     const budget = { remaining: this.cfg.MAX_SEARCHES_PER_TURN };
     const seenUrls = new Set<string>();
-    const numbered: SearchHit[] = [];
-    const hits: SearchHit[] = [];
+    const numbered: Evidence[] = [];
+    const extractions: Extraction[] = [];
+    const extractBudget = { remaining: this.cfg.MAX_EXTRACTS_PER_TURN };
+    const extracted = new Set<string>();
     const queries: string[] = [];
+    const usage = { promptTokens: 0, completionTokens: 0, rounds: 0, waitedMs: 0 };
+    // Change checks get the credit reserve; routine questions cannot drain it.
+    const budgeted = this.search as (SearchProvider & { context?: { priority: "normal" | "high"; messageId: string | null } }) | null;
+    if (budgeted?.context) budgeted.context.priority = req.toolChoice === "required" ? "high" : "normal";
     let searchUnavailable = req.toolChoice !== "none" && !searchAvailable;
     let text = "";
 
@@ -140,10 +155,19 @@ export class GroqProvider implements LlmProvider {
         let writing = false;
         try {
           const body = buildGroqBody(messages, this.cfg, choice);
-          // Observability: request size per round (≈ chars/4 tokens), no content.
-          console.info(`[groq] round=${round + 1} tool_choice=${choice} ~${Math.round(JSON.stringify(body.messages).length / 4)} input tokens`);
+          const estimate = Math.round(JSON.stringify(body.messages).length / 4) + 800;
+          usage.waitedMs += await this.gate.waitFor(estimate, signal);
+          usage.rounds++;
+          const t0 = Date.now();
           const stream = await this.client.create(body, signal);
+          let roundTokens = 0;
           for await (const chunk of stream) {
+            const u = ((chunk.x_groq as Json | undefined)?.usage ?? chunk.usage) as { prompt_tokens?: number; completion_tokens?: number } | undefined;
+            if (u && typeof u.prompt_tokens === "number" && roundTokens === 0) {
+              usage.promptTokens += u.prompt_tokens;
+              usage.completionTokens += u.completion_tokens ?? 0;
+              roundTokens = u.prompt_tokens + (u.completion_tokens ?? 0);
+            }
             const delta = ((chunk.choices as Json[] | undefined)?.[0]?.delta ?? {}) as Json;
             const content = str(delta.content);
             if (content) {
@@ -165,6 +189,9 @@ export class GroqProvider implements LlmProvider {
               });
             }
           }
+          this.gate.record(roundTokens || estimate);
+          // Observability: sizes and latency only — never content or keys.
+          console.info(`[groq] round=${round + 1} tool_choice=${choice} tokens=${roundTokens || `~${estimate}`} ms=${Date.now() - t0}`);
           break;
         } catch (e) {
           if (signal.aborted || !toolUseFailed(e) || choice === "none" || attempt >= 2) throw e;
@@ -191,12 +218,12 @@ export class GroqProvider implements LlmProvider {
           messages.push({ role: "tool", tool_call_id: c.id, content: `Unknown tool "${c.name}". The only tool is web_search.` });
           continue;
         }
-        const run = await runWebSearch(c.args, this.search, { signal, seenUrls, budget, numbered });
+        const run = await runWebSearch(c.args, this.search, { signal, seenUrls, budget, numbered, extractBudget, extracted, entities: req.entities, today: req.today });
         for (const q of run.queries) {
           queries.push(q);
           yield { type: "search", query: q };
         }
-        hits.push(...run.hits);
+        extractions.push(...run.extractions);
         if (run.unavailable) searchUnavailable = true;
         messages.push({ role: "tool", tool_call_id: c.id, content: run.content });
       }
@@ -206,7 +233,7 @@ export class GroqProvider implements LlmProvider {
 
     const urls = numbered.map((h) => h.url);
     text = linkifyKnownUrls(rewriteCitationMarkers(text, urls), urls);
-    yield { type: "done", text, sources: hitsToSources(hits), searchQueries: queries, searchUnavailable };
+    yield { type: "done", text, sources: evidenceToSources(numbered), searchQueries: queries, searchUnavailable, extractions, usage };
   }
 
   async complete(system: string, user: string, signal: AbortSignal): Promise<string> {

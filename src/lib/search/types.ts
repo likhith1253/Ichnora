@@ -25,14 +25,32 @@ export interface SearchHit {
   query: string;
 }
 
+export type SearchErrorKind = "quota" | "rate_limit" | "auth" | "failed" | "budget";
+
 export interface SearchOutcome {
   query: string;
   hits: SearchHit[];
   /** Set when the engine refused or failed; hits is then empty. */
-  error?: { kind: "quota" | "rate_limit" | "auth" | "failed"; message: string };
+  error?: { kind: SearchErrorKind; message: string };
+}
+
+export interface Extraction {
+  url: string;
+  ok: boolean;
+  /** Relevant passages only (query-focused), bounded. Untrusted. */
+  content: string;
+  retrievedAt: string;
+  error?: string;
+}
+
+export interface ExtractOutcome {
+  pages: Extraction[];
+  error?: { kind: SearchErrorKind; message: string };
 }
 
 export interface SearchProvider {
   readonly name: string;
   search(q: SearchQuery, signal: AbortSignal): Promise<SearchOutcome>;
+  /** Full-page read of selected URLs (optional capability). */
+  extract?(urls: string[], query: string, signal: AbortSignal): Promise<ExtractOutcome>;
 }

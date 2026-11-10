@@ -1,8 +1,12 @@
 import type { AppConfig } from "../env";
+import type { DB } from "../db";
+import { BudgetedSearch, CreditLedger, tavilyUsageFetcher } from "../search/budget";
 import { TavilySearch } from "../search/tavily";
+import type { SearchProvider } from "../search/types";
 import { GroqProvider } from "./groq";
 import type { ModelRequest } from "./prompt";
 import type { RawSource } from "./sources";
+import type { Extraction } from "../search/types";
 
 /**
  * Provider boundary. Everything vendor-specific lives behind `LlmProvider`;
@@ -18,7 +22,17 @@ export type ProviderEvent =
   | { type: "text"; delta: string }
   /** Discard streamed text so far (it was pre-tool-call chatter). */
   | { type: "reset" }
-  | { type: "done"; text: string; sources: RawSource[]; searchQueries: string[]; searchUnavailable?: boolean; model?: string };
+  | {
+      type: "done";
+      text: string;
+      sources: RawSource[];
+      searchQueries: string[];
+      searchUnavailable?: boolean;
+      model?: string;
+      /** Full-page reads attempted this turn (ok or failed). */
+      extractions?: Extraction[];
+      usage?: { promptTokens: number; completionTokens: number; rounds: number; waitedMs: number };
+    };
 
 export interface LlmProvider {
   readonly name: "groq" | "fake";
@@ -39,8 +53,13 @@ export function assertSingleSearchTool(tools: ReadonlyArray<object> | undefined)
   }
 }
 
-export function createProvider(cfg: AppConfig): LlmProvider | null {
+export function createProvider(cfg: AppConfig, db?: DB): LlmProvider | null {
   if (!cfg.GROQ_API_KEY) return null;
-  const search = cfg.TAVILY_API_KEY ? new TavilySearch(cfg.TAVILY_API_KEY, { maxResults: 5 }) : null;
+  let search: SearchProvider | null = cfg.TAVILY_API_KEY ? new TavilySearch(cfg.TAVILY_API_KEY, { maxResults: 5 }) : null;
+  // Credit governance: persisted ledger + account sync + reserve for change checks.
+  if (search && db && cfg.TAVILY_API_KEY) {
+    const ledger = new CreditLedger(db, { monthlyLimit: cfg.TAVILY_MONTHLY_CREDITS, reserve: cfg.TAVILY_RESERVE_CREDITS });
+    search = new BudgetedSearch(search, ledger, tavilyUsageFetcher(cfg.TAVILY_API_KEY));
+  }
   return new GroqProvider(cfg, search);
 }
