@@ -34,6 +34,12 @@ export interface TurnInput {
   timeZone: string;
   /** Client-generated id; makes retries idempotent. */
   requestId: string;
+  /**
+   * A previously computed answer to replay without calling the model. Used only
+   * by the demo, whose budgets must not be spent twice on the same prompt. The
+   * rest of the pipeline (persistence, citations, observations) runs normally.
+   */
+  cached?: { text: string; sources: RawSource[]; searched?: boolean; searchQueries?: string[]; model?: string };
 }
 
 export interface MemorySummary {
@@ -55,7 +61,7 @@ export type TurnEvent =
   | { type: "done"; message: Message; replayed?: boolean }
   | { type: "memory"; items: Array<Pick<MemoryItem, "id" | "title" | "type" | "baselineDate">> }
   | { type: "personal"; created: Array<{ id: string; type: string; content: string; dueDate: string | null; status: string }>; transitions: Array<{ id: string; content: string; from: string; to: string }> }
-  | { type: "error"; code: "config" | "busy" | "model" | "timeout" | "cancelled" | "not_found"; message: string; missingVar?: string };
+  | { type: "error"; code: "config" | "busy" | "model" | "timeout" | "cancelled" | "not_found" | "budget"; message: string; missingVar?: string };
 
 export interface AgentDeps {
   db: DB;
@@ -190,9 +196,11 @@ export async function* runTurn(deps: AgentDeps, input: TurnInput, signal: AbortS
       };
     }
 
-    const request = buildModelRequest({ retrieval, userText: input.text, now: now(), timeZone: input.timeZone });
-    if (request.toolChoice === "required") yield { type: "phase", phase: "searching" };
-    else yield { type: "phase", phase: "thinking" };
+    const request = input.cached ? null : buildModelRequest({ retrieval, userText: input.text, now: now(), timeZone: input.timeZone });
+    if (request) {
+      if (request.toolChoice === "required") yield { type: "phase", phase: "searching" };
+      else yield { type: "phase", phase: "thinking" };
+    }
 
     const ctrl = new AbortController();
     const onAbort = () => ctrl.abort(signal.reason);
@@ -211,28 +219,39 @@ export async function* runTurn(deps: AgentDeps, input: TurnInput, signal: AbortS
     let failure: { code: "model" | "timeout" | "cancelled"; message: string } | null = null;
 
     try {
-      for await (const ev of provider.stream(request, ctrl.signal)) {
-        if (ev.type === "text") {
-          if (firstTokenMs === null) firstTokenMs = Math.round(performance.now() - t0);
-          text += ev.delta;
-          yield { type: "delta", text: ev.delta };
-        } else if (ev.type === "search") {
-          searches++;
-          yield { type: "search", query: ev.query, count: searches };
-        } else if (ev.type === "reset") {
-          text = "";
-          yield { type: "reset" };
-        } else if (ev.type === "phase") {
-          yield { type: "phase", phase: ev.phase };
-        } else if (ev.type === "done") {
-          text = ev.text || text;
-          raw = ev.sources;
-          queries = ev.searchQueries;
-          searchUnavailable = Boolean(ev.searchUnavailable);
-          if (ev.model) modelUsed = ev.model;
-          extractions = ev.extractions ?? [];
-          usage = ev.usage ?? null;
-          searches = Math.max(searches, queries.length, raw.length > 0 ? 1 : 0);
+      if (input.cached) {
+        // Replay a cached answer: no model call, no search credits, but the same
+        // persistence, citation and observation pipeline below.
+        text = input.cached.text;
+        raw = input.cached.sources;
+        queries = input.cached.searchQueries ?? [];
+        searches = input.cached.searched ? Math.max(1, queries.length || 1) : 0;
+        if (input.cached.model) modelUsed = input.cached.model;
+        yield { type: "delta", text };
+      } else if (request) {
+        for await (const ev of provider.stream(request, ctrl.signal)) {
+          if (ev.type === "text") {
+            if (firstTokenMs === null) firstTokenMs = Math.round(performance.now() - t0);
+            text += ev.delta;
+            yield { type: "delta", text: ev.delta };
+          } else if (ev.type === "search") {
+            searches++;
+            yield { type: "search", query: ev.query, count: searches };
+          } else if (ev.type === "reset") {
+            text = "";
+            yield { type: "reset" };
+          } else if (ev.type === "phase") {
+            yield { type: "phase", phase: ev.phase };
+          } else if (ev.type === "done") {
+            text = ev.text || text;
+            raw = ev.sources;
+            queries = ev.searchQueries;
+            searchUnavailable = Boolean(ev.searchUnavailable);
+            if (ev.model) modelUsed = ev.model;
+            extractions = ev.extractions ?? [];
+            usage = ev.usage ?? null;
+            searches = Math.max(searches, queries.length, raw.length > 0 ? 1 : 0);
+          }
         }
       }
     } catch (e) {

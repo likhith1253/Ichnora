@@ -1,4 +1,5 @@
 import type { Extraction, ExtractOutcome, SearchHit, SearchOutcome, SearchProvider, SearchQuery } from "./types";
+import { sanitizeSearchQuery } from "./sanitize";
 
 /**
  * Tavily Search API (https://docs.tavily.com). Free plan: 1,000 credits/month,
@@ -55,8 +56,11 @@ export class TavilySearch implements SearchProvider {
     if (breaker.until > now().getTime() && breaker.kind) {
       return { query: q.query, hits: [], error: { kind: breaker.kind, message: breaker.message } };
     }
+    // Data minimisation: strip identity tokens before anything leaves the machine.
+    const query = sanitizeSearchQuery(q.query);
+    if (!query) return { query: q.query, hits: [] };
     const body: Record<string, unknown> = {
-      query: q.query.slice(0, 400),
+      query,
       topic: q.topic ?? "general",
       search_depth: "basic", // 1 credit; "advanced" costs 2
       max_results: this.opts.maxResults ?? 5,
@@ -135,7 +139,7 @@ export class TavilySearch implements SearchProvider {
       res = await (this.opts.fetchImpl ?? fetch)(EXTRACT_ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${this.apiKey}` },
-        body: JSON.stringify({ urls: urls.slice(0, 5), query: query.slice(0, 400), chunks_per_source: 3, extract_depth: "basic", format: "text", timeout: 15 }),
+        body: JSON.stringify({ urls: urls.slice(0, 5), query: sanitizeSearchQuery(query), chunks_per_source: 3, extract_depth: "basic", format: "text", timeout: 15 }),
         signal,
       });
     } catch (e) {

@@ -11,6 +11,7 @@ import { collectSources, linkifyKnownUrls, resolveNumberedCitations, rewriteCita
 import { parseToolArgs, runWebSearch, WEB_SEARCH_TOOL } from "@/lib/agent/webSearchTool";
 import { getConfig } from "@/lib/env";
 import { normalizeDate, resetTavilyBreaker, TavilySearch } from "@/lib/search/tavily";
+import { sanitizeSearchQuery } from "@/lib/search/sanitize";
 import type { SearchProvider, SearchQuery } from "@/lib/search/types";
 
 const REQ: ModelRequest = { system: "rules", memoryContext: "<memory_context>m</memory_context>", history: [{ role: "user", content: "earlier" }], user: "q", toolChoice: "auto" };
@@ -306,6 +307,40 @@ describe("Tavily search layer", () => {
     expect(normalizeDate("2026-10-01T09:00:00Z")).toBe("2026-10-01");
     expect(normalizeDate("not a date")).toBeNull();
     expect(normalizeDate(null)).toBeNull();
+  });
+});
+
+describe("search query sanitisation (data minimisation)", () => {
+  it("strips email addresses and collapses whitespace", () => {
+    expect(sanitizeSearchQuery("pricing at   accounts@acme.co  please")).toBe("pricing at please");
+    expect(sanitizeSearchQuery("contact rahul.sharma+leads@example.com about Neon pricing")).toBe("contact about Neon pricing");
+    expect(sanitizeSearchQuery("neon pricing")).toBe("neon pricing");
+    expect(sanitizeSearchQuery("   ")).toBe("");
+  });
+
+  it("never sends an email address to Tavily (search body)", async () => {
+    const seen: Array<{ url: string; init: RequestInit }> = [];
+    const t = new TavilySearch("tvly-test", { now: NOW, fetchImpl: fakeFetch(200, { results: [] }, seen) });
+    await t.search({ query: "reach me at boss@acme.com for Neon pricing" }, new AbortController().signal);
+    const body = JSON.parse(String(seen[0]!.init.body)) as { query: string };
+    expect(body.query).not.toContain("@");
+    expect(body.query).toContain("Neon pricing");
+  });
+
+  it("never sends an email address to Tavily (extract body)", async () => {
+    const seen: Array<{ url: string; init: RequestInit }> = [];
+    const t = new TavilySearch("tvly-test", { now: NOW, fetchImpl: fakeFetch(200, { results: [{ url: "https://neon.com/pricing", raw_content: "ok ".repeat(40) }] }, seen) });
+    await t.extract(["https://neon.com/pricing"], "prices for team@acme.com", new AbortController().signal);
+    const body = JSON.parse(String(seen[0]!.init.body)) as { query: string };
+    expect(body.query).not.toContain("@");
+  });
+
+  it("skips a query that is pure identity data instead of calling out", async () => {
+    const seen: Array<{ url: string; init: RequestInit }> = [];
+    const t = new TavilySearch("tvly-test", { now: NOW, fetchImpl: fakeFetch(200, { results: [] }, seen) });
+    const out = await t.search({ query: "person@example.com" }, new AbortController().signal);
+    expect(seen).toHaveLength(0); // no network call at all
+    expect(out.hits).toHaveLength(0);
   });
 });
 
