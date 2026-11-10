@@ -2,24 +2,19 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, getWorkspaceId, newId, recallActive, rememberActive, streamChat, userTimeZone } from "./api";
-import { MemoryPanel } from "./MemoryPanel";
-import { Markdown, MessageItem, PhaseIndicator, RecallBadge } from "./MessageItem";
-import type { Conversation, MemorySummary, Message, Phase, Status } from "./types";
+import { ChatView, type ChatError, type Notice, type Pending } from "./ChatView";
+import { dayLabel } from "./format";
+import { LoopsView } from "./LoopsView";
+import { MemoryView } from "./MemoryView";
+import { SettingsMenu } from "./SettingsMenu";
+import { Sidebar } from "./Sidebar";
+import type { Conversation, MemorySummary, Message, PersonalEvent, Phase, Status } from "./types";
 
-interface Pending {
-  user: Message;
-  memory?: MemorySummary;
-  phase: Phase;
-  text: string;
-  searches: string[];
-  requestId: string;
-}
-
-const SUGGESTIONS = [
-  "What are the best CRM tools for a 20-person sales team? Give me a shortlist of 5 with current pricing.",
-  "Compare managed Postgres hosting: Neon, Supabase, AWS RDS and Render — entry pricing.",
-  "What did I ask you yesterday?",
-  "What changed in the latest Node.js LTS release?",
+type View = "chat" | "loops" | "memory";
+const VIEWS: Array<{ id: View; label: string }> = [
+  { id: "chat", label: "Chat" },
+  { id: "loops", label: "Open loops" },
+  { id: "memory", label: "Memory" },
 ];
 
 function tempUserMessage(conversationId: string, text: string, tz: string): Message {
@@ -38,25 +33,39 @@ function tempUserMessage(conversationId: string, text: string, tz: string): Mess
   };
 }
 
+function personalNotices(ev: PersonalEvent): Notice[] {
+  const out: Notice[] = [];
+  for (const c of ev.created ?? []) {
+    const tentative = c.status === "CONSIDERING";
+    const verb = tentative ? "Noted as tentative" : c.type === "DECISION" ? "Decision noted" : "Noted";
+    out.push({ id: `c-${c.id}`, text: `${verb}: ${c.content}${c.dueDate ? ` — due ${dayLabel(c.dueDate)}` : ""}` });
+  }
+  for (const t of ev.transitions ?? []) {
+    const verb = t.to === "COMPLETED" ? "Marked done" : t.to === "CANCELLED" ? "Cancelled" : t.to === "SUPERSEDED" ? "Superseded" : `Now ${t.to.toLowerCase()}`;
+    out.push({ id: `t-${t.id}-${t.to}`, text: `${verb}: ${t.content}` });
+  }
+  return out;
+}
+
 export default function ChatApp() {
   // Workspace id lives in localStorage; read once on the client.
   const [ws] = useState<string | null>(() => (typeof window === "undefined" ? null : getWorkspaceId()));
   const [status, setStatus] = useState<Status | null>(null);
+  const [view, setView] = useState<View>("chat");
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [loadingThread, setLoadingThread] = useState(false);
   const [memoryByUser, setMemoryByUser] = useState<Record<string, MemorySummary>>({});
   const [pending, setPending] = useState<Pending | null>(null);
-  const [error, setError] = useState<{ message: string; missingVar?: string; retryText?: string } | null>(null);
+  const [error, setError] = useState<ChatError | null>(null);
   const [input, setInput] = useState("");
-  const [showMemory, setShowMemory] = useState(false);
-  const [memoryRefresh, setMemoryRefresh] = useState(0);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [renaming, setRenaming] = useState<string | null>(null);
+  const [notices, setNotices] = useState<Notice[]>([]);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [railOpen, setRailOpen] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const stickToBottom = useRef(true);
+  const tabRefs = useRef<Record<View, HTMLButtonElement | null>>({ chat: null, loops: null, memory: null });
 
   const refreshConversations = useCallback(async (workspace: string) => {
     const r = await api.conversations(workspace).catch(() => ({ conversations: [] as Conversation[] }));
@@ -65,9 +74,11 @@ export default function ChatApp() {
   }, []);
 
   const loadConversation = useCallback(async (workspace: string, id: string) => {
+    setLoadingThread(true);
     const r = await api.conversation(workspace, id).catch(() => null);
     setMessages(r?.messages ?? []);
     setMemoryByUser({});
+    setLoadingThread(false);
   }, []);
 
   // Boot: workspace id from localStorage, then conversations and status.
@@ -75,43 +86,41 @@ export default function ChatApp() {
     if (!ws) return;
     const id = ws;
     api.status().then(setStatus).catch(() => setStatus({ configured: false, error: "Server unreachable" }));
-    api.conversations(id).catch(() => ({ conversations: [] as Conversation[] })).then(({ conversations: list }) => {
-      setConversations(list);
-      const remembered = recallActive();
-      const pick = list.find((c) => c.id === remembered)?.id ?? list[0]?.id ?? null;
-      setActiveId(pick);
-      if (pick) loadConversation(id, pick);
-    });
+    api
+      .conversations(id)
+      .catch(() => ({ conversations: [] as Conversation[] }))
+      .then(({ conversations: list }) => {
+        setConversations(list);
+        const remembered = recallActive();
+        const pick = list.find((c) => c.id === remembered)?.id ?? list[0]?.id ?? null;
+        setActiveId(pick);
+        if (pick) loadConversation(id, pick);
+      });
   }, [ws, loadConversation]);
 
   useEffect(() => rememberActive(activeId), [activeId]);
 
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
-  }, [messages, pending]);
-
-  const onScroll = () => {
-    const el = scrollRef.current;
-    if (el) stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
-  };
-
   const selectConversation = (id: string) => {
     if (!ws || pending) return;
-    setActiveId(id);
+    setView("chat");
+    setRailOpen(false);
     setError(null);
-    setSidebarOpen(false);
+    setNotices([]);
+    if (id === activeId && messages.length) return;
+    setActiveId(id);
     loadConversation(ws, id);
   };
 
   const newConversation = () => {
     if (pending) return;
+    setView("chat");
     setActiveId(null);
     setMessages([]);
     setMemoryByUser({});
     setError(null);
-    setSidebarOpen(false);
-    inputRef.current?.focus();
+    setNotices([]);
+    setRailOpen(false);
+    requestAnimationFrame(() => inputRef.current?.focus());
   };
 
   const send = async (raw: string, requestId = newId()) => {
@@ -120,9 +129,9 @@ export default function ChatApp() {
     const tz = userTimeZone();
     const conversationId = activeId ?? newId();
     if (!activeId) setActiveId(conversationId);
+    setView("chat");
     setInput("");
     setError(null);
-    stickToBottom.current = true;
     const p: Pending = { user: tempUserMessage(conversationId, text, tz), phase: "retrieving", text: "", searches: [], requestId };
     setPending(p);
     const ctrl = new AbortController();
@@ -156,11 +165,15 @@ export default function ChatApp() {
             setMessages((ms) => (d.replayed ? ms : [...ms, user, assistant]));
             setPending(null);
             refreshConversations(ws);
-          } else if (type === "memory") setMemoryRefresh((n) => n + 1);
-          else if (type === "error") {
+          } else if (type === "memory") setRefreshKey((n) => n + 1);
+          else if (type === "personal") {
+            const fresh = personalNotices(d as unknown as PersonalEvent);
+            if (fresh.length) setNotices((ns) => [...ns.filter((n) => !fresh.some((f) => f.id === n.id)), ...fresh].slice(-4));
+            setRefreshKey((n) => n + 1);
+          } else if (type === "error") {
             finished = true;
             setPending(null);
-            setError({ message: String(d.message), missingVar: d.missingVar as string | undefined, retryText: d.code === "config" ? undefined : text });
+            setError({ message: String(d.message), missingVar: d.missingVar as string | undefined, retry: d.code === "config" ? undefined : { text, requestId } });
             if (d.code === "config") setInput(text);
             else loadConversation(ws, conversationId);
             refreshConversations(ws);
@@ -170,7 +183,7 @@ export default function ChatApp() {
       );
       if (!finished) {
         setPending(null);
-        setError({ message: "The connection closed before the answer finished.", retryText: text });
+        setError({ message: "The connection closed before the answer finished.", retry: { text, requestId } });
         loadConversation(ws, conversationId);
       }
     } catch (e) {
@@ -178,7 +191,7 @@ export default function ChatApp() {
       if ((e as Error).name === "AbortError") {
         setTimeout(() => loadConversation(ws, conversationId), 300);
       } else {
-        setError({ message: "Could not reach the server.", retryText: text });
+        setError({ message: "Could not reach the server.", retry: { text, requestId } });
       }
     } finally {
       abortRef.current = null;
@@ -188,8 +201,7 @@ export default function ChatApp() {
 
   const stop = () => abortRef.current?.abort();
 
-  const commitRename = async (id: string, title: string) => {
-    setRenaming(null);
+  const rename = async (id: string, title: string) => {
     if (!ws || !title.trim()) return;
     await api.rename(ws, id, title.trim()).catch(() => null);
     refreshConversations(ws);
@@ -200,7 +212,7 @@ export default function ChatApp() {
     if (!window.confirm("Delete this conversation and the memory distilled from it?")) return;
     await api.remove(ws, id).catch(() => null);
     const list = await refreshConversations(ws);
-    setMemoryRefresh((n) => n + 1);
+    setRefreshKey((n) => n + 1);
     if (id === activeId) {
       const next = list[0]?.id ?? null;
       setActiveId(next);
@@ -209,208 +221,106 @@ export default function ChatApp() {
     }
   };
 
-  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-      e.preventDefault();
-      send(input);
-    }
+  const onForgotten = () => {
+    setConversations([]);
+    setActiveId(null);
+    setMessages([]);
+    setMemoryByUser({});
+    setNotices([]);
+    setError(null);
+    setInput("");
+    setRefreshKey((n) => n + 1);
+    setView("chat");
+  };
+
+  const onTabKey = (e: React.KeyboardEvent, idx: number) => {
+    let next = idx;
+    if (e.key === "ArrowRight") next = (idx + 1) % VIEWS.length;
+    else if (e.key === "ArrowLeft") next = (idx - 1 + VIEWS.length) % VIEWS.length;
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = VIEWS.length - 1;
+    else return;
+    e.preventDefault();
+    const v = VIEWS[next]!.id;
+    setView(v);
+    tabRefs.current[v]?.focus();
   };
 
   const active = conversations.find((c) => c.id === activeId);
-  const empty = messages.length === 0 && !pending;
 
   return (
-    <div className={`shell ${showMemory ? "with-memory" : ""}`}>
-      <aside className={`sidebar ${sidebarOpen ? "open" : ""}`} aria-label="Conversations">
-        <div className="brand">
-          <span className="logo" aria-hidden>
-            m
-          </span>
-          <div>
-            <strong>Minimi</strong>
-            <small>research · memory</small>
-          </div>
-        </div>
-        <button className="new-btn" onClick={newConversation} disabled={!!pending}>
-          + New conversation
-        </button>
-        <nav className="conv-list">
-          {conversations.length === 0 && <p className="muted pad">No conversations yet.</p>}
-          {conversations.map((c) => (
-            <div key={c.id} className={`conv ${c.id === activeId ? "active" : ""}`}>
-              {renaming === c.id ? (
-                <input
-                  autoFocus
-                  defaultValue={c.title}
-                  aria-label="Conversation title"
-                  onBlur={(e) => commitRename(c.id, e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") commitRename(c.id, (e.target as HTMLInputElement).value);
-                    if (e.key === "Escape") setRenaming(null);
-                  }}
-                />
-              ) : (
-                <button className="conv-main" onClick={() => selectConversation(c.id)} onDoubleClick={() => setRenaming(c.id)} title={c.title}>
-                  <span className="conv-title">{c.title}</span>
-                  <span className="conv-date">{new Date(c.updatedAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}</span>
-                </button>
-              )}
-              <div className="conv-actions">
-                <button className="icon-btn" onClick={() => setRenaming(c.id)} aria-label={`Rename ${c.title}`}>
-                  ✎
-                </button>
-                <button className="icon-btn" onClick={() => removeConversation(c.id)} aria-label={`Delete ${c.title}`}>
-                  🗑
-                </button>
-              </div>
-            </div>
-          ))}
-        </nav>
-        <footer className="side-foot">
-          {status && (
-            <span className={`status ${status.configured && status.searchConfigured ? "ok" : "bad"}`}>
-              <span className="led" aria-hidden />
-              {!status.configured ? "GROQ_API_KEY not configured" : status.searchConfigured ? `${status.model} · web search on` : "TAVILY_API_KEY missing · search off"}
-            </span>
-          )}
-        </footer>
-      </aside>
-      {sidebarOpen && <div className="scrim" onClick={() => setSidebarOpen(false)} aria-hidden />}
+    <div className="shell">
+      <a href="#main" className="skip">
+        Skip to content
+      </a>
+      <Sidebar
+        open={railOpen}
+        conversations={conversations}
+        activeId={activeId}
+        busy={!!pending}
+        status={status}
+        onNew={newConversation}
+        onSelect={selectConversation}
+        onRename={rename}
+        onDelete={removeConversation}
+        onClose={() => setRailOpen(false)}
+      />
 
-      <main className="chat">
+      <div className="main">
         <header className="topbar">
-          <button className="icon-btn menu" onClick={() => setSidebarOpen(true)} aria-label="Open conversations">
-            ☰
+          <button type="button" className="icon-btn menu" onClick={() => setRailOpen(true)} aria-label="Open conversations">
+            <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
+              <path d="M2 5h14M2 9h14M2 13h14" stroke="currentColor" strokeWidth="1.5" />
+            </svg>
           </button>
-          <h1>{active?.title ?? "New conversation"}</h1>
-          <button className={`mem-toggle ${showMemory ? "on" : ""}`} onClick={() => setShowMemory((v) => !v)} aria-pressed={showMemory}>
-            Memory
-          </button>
+          <div className="tabs" role="tablist" aria-label="Views">
+            {VIEWS.map((v, i) => (
+              <button
+                key={v.id}
+                ref={(el) => {
+                  tabRefs.current[v.id] = el;
+                }}
+                type="button"
+                role="tab"
+                id={`tab-${v.id}`}
+                aria-selected={view === v.id}
+                aria-controls="main"
+                tabIndex={view === v.id ? 0 : -1}
+                className={`tab${view === v.id ? " on" : ""}`}
+                onClick={() => setView(v.id)}
+                onKeyDown={(e) => onTabKey(e, i)}
+              >
+                {v.label}
+              </button>
+            ))}
+          </div>
+          <SettingsMenu ws={ws} onForgotten={onForgotten} />
         </header>
 
-        <div className="scroll" ref={scrollRef} onScroll={onScroll}>
-          <div className="thread">
-            {status?.configured && !status.searchConfigured && (
-              <div className="alert" role="status">
-                <span>
-                  Live web search is off: add <code>TAVILY_API_KEY</code> to <code>.env.local</code> (free at tavily.com). Memory and recall still work; current facts will be
-                  marked unverified.
-                </span>
-              </div>
-            )}
-            {empty && (
-              <section className="welcome">
-                <h2>
-                  Ask anything. <em>I’ll remember when you asked.</em>
-                </h2>
-                <p>
-                  Minimi searches the web when facts may have changed, cites its sources, and keeps a dated record of every question — so you can come back
-                  later and ask <q>has any of that changed since?</q>
-                </p>
-                <div className="suggestions">
-                  {SUGGESTIONS.map((s) => (
-                    <button key={s} onClick={() => send(s)} disabled={!!pending}>
-                      {s}
-                    </button>
-                  ))}
-                </div>
-              </section>
-            )}
-            {messages.map((m) => (
-              <MessageItem key={m.id} message={m} memory={memoryByUser[m.id]} />
-            ))}
-            {pending && (
-              <>
-                <article className="msg user">
-                  <header className="msg-head">
-                    <span className="who">You</span>
-                    <time>{new Date(pending.user.createdAtUtc).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}</time>
-                  </header>
-                  {pending.memory && <RecallBadge memory={pending.memory} />}
-                  <div className="msg-body">
-                    <p className="plain">{pending.user.content}</p>
-                  </div>
-                </article>
-                <article className="msg assistant streaming" aria-busy="true">
-                  <header className="msg-head">
-                    <span className="who">Minimi</span>
-                  </header>
-                  {(pending.phase !== "writing" || pending.searches.length > 0) && <PhaseIndicator phase={pending.phase} searches={pending.searches} />}
-                  {pending.text && (
-                    <div className="msg-body">
-                      <Markdown text={pending.text.replace(/【[^】]*】/g, "")} />
-                      <span className="caret" aria-hidden />
-                    </div>
-                  )}
-                </article>
-              </>
-            )}
-            {error && (
-              <div className="alert" role="alert">
-                {error.missingVar ? (
-                  <>
-                    <strong>Setup needed.</strong> Add <code>{error.missingVar}</code> to <code>.env.local</code> in the project folder and send your message again (no restart needed).{" "}
-                    {error.missingVar === "GROQ_API_KEY" && <>A free key is available at console.groq.com/keys.</>}
-                  </>
-                ) : (
-                  <>
-                    <span>{error.message}</span>
-                    {error.retryText && (
-                      <button className="link-btn" onClick={() => send(error.retryText!)}>
-                        Retry
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <form
-          className="composer"
-          onSubmit={(e) => {
-            e.preventDefault();
-            send(input);
-          }}
-        >
-          <label htmlFor="prompt" className="sr-only">
-            Message
-          </label>
-          <textarea
-            id="prompt"
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder={status && !status.configured ? `Set ${status.missingVar ?? "an API key"} to start chatting…` : "Ask a question, or “has any of that changed since?”"}
-            rows={1}
-            maxLength={8000}
-            autoFocus
-          />
-          {pending ? (
-            <button type="button" className="send stop" onClick={stop} aria-label="Stop generating">
-              ■
-            </button>
-          ) : (
-            <button type="submit" className="send" disabled={!input.trim()} aria-label="Send message">
-              ↑
-            </button>
+        <main id="main" className="stage" role="tabpanel" aria-labelledby={`tab-${view}`} tabIndex={-1}>
+          {view === "chat" && (
+            <ChatView
+              title={active?.title}
+              status={status}
+              messages={messages}
+              loading={loadingThread}
+              memoryByUser={memoryByUser}
+              pending={pending}
+              error={error}
+              notices={notices}
+              input={input}
+              inputRef={inputRef}
+              onInput={setInput}
+              onSend={send}
+              onStop={stop}
+              onDismissNotice={(id) => setNotices((ns) => ns.filter((n) => n.id !== id))}
+              onOpenLoops={() => setView("loops")}
+            />
           )}
-        </form>
-        <p className="hint">Enter to send · Shift+Enter for a new line · times shown in your local timezone</p>
-      </main>
-
-      {showMemory && ws && (
-        <MemoryPanel
-          workspaceId={ws}
-          refreshKey={memoryRefresh}
-          onClose={() => setShowMemory(false)}
-          onOpenConversation={(id) => {
-            selectConversation(id);
-          }}
-        />
-      )}
+          {view === "loops" && ws && <LoopsView ws={ws} refreshKey={refreshKey} onOpenConversation={selectConversation} />}
+          {view === "memory" && ws && <MemoryView ws={ws} refreshKey={refreshKey} onOpenConversation={selectConversation} />}
+        </main>
+      </div>
     </div>
   );
 }

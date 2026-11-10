@@ -1,6 +1,6 @@
 "use client";
 
-import type { Conversation, MemoryItem, Message, Status } from "./types";
+import type { Conversation, MemoryItem, Message, PersonalMemory, PersonalPatch, PersonalResponse, Status } from "./types";
 
 const WS_KEY = "minimi.workspace";
 const ACTIVE_KEY = "minimi.activeConversation";
@@ -69,7 +69,28 @@ export const api = {
   remove: (ws: string, id: string) => call(ws, `/api/conversations/${id}`, { method: "DELETE" }),
   memory: (ws: string) => call<{ items: MemoryItem[] }>(ws, "/api/memory"),
   forget: (ws: string, id: string) => call(ws, `/api/memory/${id}`, { method: "DELETE" }),
+  personal: (ws: string, tz: string) => call<PersonalResponse>(ws, `/api/personal?tz=${encodeURIComponent(tz)}`),
+  patchPersonal: (ws: string, id: string, patch: PersonalPatch) =>
+    call<{ memory: PersonalMemory }>(ws, `/api/personal/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  deletePersonal: (ws: string, id: string) => call(ws, `/api/personal/${id}`, { method: "DELETE" }),
+  forgetEverything: (ws: string) => call(ws, "/api/workspace", { method: "DELETE" }),
 };
+
+/** Download the workspace export (header-authenticated, so not a plain link). */
+export async function downloadExport(ws: string): Promise<void> {
+  const res = await fetch("/api/workspace", { headers: { "x-workspace-id": ws } });
+  if (!res.ok) throw new Error(`Export failed (${res.status})`);
+  const blob = await res.blob();
+  const name = res.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1] ?? "minimi-export.json";
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 /** Minimal SSE reader over fetch (POST bodies are not possible with EventSource). */
 export async function streamChat(
