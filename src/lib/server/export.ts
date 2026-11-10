@@ -3,12 +3,14 @@ import type { DB } from "../db";
 /**
  * Data portability: everything the app stores for a workspace, as JSON.
  * Secrets are never stored in the database, so nothing needs scrubbing here.
+ * `account` adds the signed-in user's non-secret metadata (never tokens).
  */
-export function exportWorkspace(db: DB, workspaceId: string): Record<string, unknown> {
+export function exportWorkspace(db: DB, workspaceId: string, account?: Record<string, unknown> | null): Record<string, unknown> {
   const all = (sql: string) => db.prepare(sql).all(workspaceId);
   return {
     exportedAt: new Date().toISOString(),
     workspaceId,
+    ...(account ? { account } : {}),
     conversations: all("SELECT id, title, created_at, updated_at FROM conversations WHERE workspace_id = ? ORDER BY created_at"),
     messages: all(
       "SELECT id, conversation_id, role, content, status, created_at_utc, timezone, local_date, turn_index, metadata FROM messages WHERE workspace_id = ? ORDER BY seq",

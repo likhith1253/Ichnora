@@ -27,6 +27,30 @@ const schema = z.object({
   /** "heuristic" (default, zero extra API calls) or "model" (one small extra call per research turn). */
   MEMORY_DISTILL: z.enum(["heuristic", "model"]).default("heuristic"),
   AGENT_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(600_000).default(120_000),
+
+  /* ---- identity (all optional; without them the app is single-user "local" mode) ---- */
+  /** Signs the session cookie. Required for AUTH mode; any long random string. */
+  AUTH_SECRET: z.string().optional(),
+  GITHUB_CLIENT_ID: z.string().optional(),
+  GITHUB_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  /** Absolute origin used to build OAuth callback URLs (default: derived from the request). */
+  PUBLIC_BASE_URL: z.string().optional(),
+
+  /* ---- demo (always optional; LOCAL mode works without any of them) ---- */
+  DEMO_ENABLED: z.enum(["1", "0", "true", "false", "yes", "no", "on", "off"]).default("true").transform((v) => v === "1" || v === "true" || v === "yes" || v === "on"),
+  /** How long a demo workspace lives before it is cleaned up. */
+  DEMO_TTL_HOURS: z.coerce.number().int().min(1).max(168).default(24),
+  /** Model turns allowed per demo workspace. */
+  DEMO_MAX_TURNS: z.coerce.number().int().min(1).max(100).default(8),
+  /** Tavily credits allowed per demo workspace. */
+  DEMO_MAX_CREDITS: z.coerce.number().int().min(0).max(200).default(15),
+  /** How long a cached demo answer stays fresh. */
+  DEMO_CACHE_TTL_MINUTES: z.coerce.number().int().min(5).max(2880).default(240),
+  /** Demo creations allowed per IP, and the window those are counted over. */
+  DEMO_RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(100).default(5),
+  DEMO_RATE_LIMIT_WINDOW_MINUTES: z.coerce.number().int().min(1).max(1440).default(60),
 });
 
 export type AppConfig = z.infer<typeof schema>;
@@ -83,7 +107,52 @@ export function getConfig(env: NodeJS.ProcessEnv = projectEnv()): AppConfig {
     DEFAULT_TIMEZONE: clean(env.DEFAULT_TIMEZONE),
     MEMORY_DISTILL: clean(env.MEMORY_DISTILL)?.toLowerCase(),
     AGENT_TIMEOUT_MS: clean(env.AGENT_TIMEOUT_MS),
+    AUTH_SECRET: clean(env.AUTH_SECRET),
+    GITHUB_CLIENT_ID: clean(env.GITHUB_CLIENT_ID),
+    GITHUB_CLIENT_SECRET: clean(env.GITHUB_CLIENT_SECRET),
+    GOOGLE_CLIENT_ID: clean(env.GOOGLE_CLIENT_ID),
+    GOOGLE_CLIENT_SECRET: clean(env.GOOGLE_CLIENT_SECRET),
+    PUBLIC_BASE_URL: clean(env.PUBLIC_BASE_URL),
+    DEMO_ENABLED: clean(env.DEMO_ENABLED)?.toLowerCase(),
+    DEMO_TTL_HOURS: clean(env.DEMO_TTL_HOURS),
+    DEMO_MAX_TURNS: clean(env.DEMO_MAX_TURNS),
+    DEMO_MAX_CREDITS: clean(env.DEMO_MAX_CREDITS),
+    DEMO_CACHE_TTL_MINUTES: clean(env.DEMO_CACHE_TTL_MINUTES),
+    DEMO_RATE_LIMIT_MAX: clean(env.DEMO_RATE_LIMIT_MAX),
+    DEMO_RATE_LIMIT_WINDOW_MINUTES: clean(env.DEMO_RATE_LIMIT_WINDOW_MINUTES),
   });
+}
+
+/* ----------------------------------------------------------------- identity */
+
+export type AuthMode = "local" | "auth";
+export const PROVIDER_NAMES = ["github", "google"] as const;
+export type ProviderName = (typeof PROVIDER_NAMES)[number];
+
+export interface ProviderConfig {
+  name: ProviderName;
+  clientId: string;
+  clientSecret: string;
+}
+
+/** Providers that have both a client id and secret. */
+export function configuredProviders(cfg: AppConfig = getConfig()): ProviderConfig[] {
+  const out: ProviderConfig[] = [];
+  if (cfg.GITHUB_CLIENT_ID && cfg.GITHUB_CLIENT_SECRET) out.push({ name: "github", clientId: cfg.GITHUB_CLIENT_ID, clientSecret: cfg.GITHUB_CLIENT_SECRET });
+  if (cfg.GOOGLE_CLIENT_ID && cfg.GOOGLE_CLIENT_SECRET) out.push({ name: "google", clientId: cfg.GOOGLE_CLIENT_ID, clientSecret: cfg.GOOGLE_CLIENT_SECRET });
+  return out;
+}
+
+export function providerConfig(name: string, cfg: AppConfig = getConfig()): ProviderConfig | null {
+  return configuredProviders(cfg).find((p) => p.name === name) ?? null;
+}
+
+/**
+ * AUTH mode needs at least one fully configured provider *and* a secret to
+ * sign the session cookie. With none of them the app is single-user "local".
+ */
+export function authMode(cfg: AppConfig = getConfig()): AuthMode {
+  return cfg.AUTH_SECRET && configuredProviders(cfg).length > 0 ? "auth" : "local";
 }
 
 export interface ProviderStatus {
@@ -97,6 +166,12 @@ export interface ProviderStatus {
   /** Missing LLM variable NAME (never a value). */
   missingVar?: string;
   missingVars: string[];
+  /** "local" (single user, no sign-in) or "auth" (OAuth configured). */
+  authMode: AuthMode;
+  /** Names of the configured OAuth providers — never their keys. */
+  providers: ProviderName[];
+  /** Whether "Try demo" is available. */
+  demo: boolean;
 }
 
 export function providerStatus(cfg: AppConfig = getConfig()): ProviderStatus {
@@ -109,5 +184,8 @@ export function providerStatus(cfg: AppConfig = getConfig()): ProviderStatus {
     searchConfigured: Boolean(cfg.TAVILY_API_KEY),
     missingVar: cfg.GROQ_API_KEY ? undefined : "GROQ_API_KEY",
     missingVars,
+    authMode: authMode(cfg),
+    providers: configuredProviders(cfg).map((p) => p.name),
+    demo: cfg.DEMO_ENABLED,
   };
 }

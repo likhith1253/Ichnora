@@ -1,7 +1,8 @@
 import { getDb } from "@/lib/db";
 import { getConfig } from "@/lib/env";
 import { listPersonalMemories, openLoops } from "@/lib/personal/queries";
-import { badRequest, json, workspaceFrom } from "@/lib/server/http";
+import { badRequest, json } from "@/lib/server/http";
+import { resolveWorkspace } from "@/lib/server/identity";
 import { isValidTimeZone, localDateOf } from "@/lib/time/dates";
 
 export const runtime = "nodejs";
@@ -11,8 +12,9 @@ const TYPES = new Set(["FACT", "PREFERENCE", "DECISION", "COMMITMENT", "ACTION_I
 
 /** Personal-memory inspector + open-loop feed (UI only — never a model tool). */
 export async function GET(req: Request) {
-  const ws = workspaceFrom(req);
-  if (!ws) return badRequest("Missing or invalid x-workspace-id header");
+  const db = getDb();
+  const idn = resolveWorkspace(req, db);
+  if (!idn.ok) return idn.response;
   const url = new URL(req.url);
   const type = url.searchParams.get("type") ?? undefined;
   if (type && !TYPES.has(type)) return badRequest("Unknown memory type");
@@ -20,10 +22,9 @@ export async function GET(req: Request) {
   const offset = Math.max(0, Number(url.searchParams.get("offset") ?? 0) || 0);
   const tzParam = url.searchParams.get("tz") ?? "";
   const tz = isValidTimeZone(tzParam) ? tzParam : getConfig().DEFAULT_TIMEZONE;
-  const db = getDb();
   return json({
     today: localDateOf(new Date(), tz),
-    items: listPersonalMemories(db, ws, { type, limit, offset }),
-    loops: openLoops(db, ws, localDateOf(new Date(), tz)),
+    items: listPersonalMemories(db, idn.workspaceId, { type, limit, offset }),
+    loops: openLoops(db, idn.workspaceId, localDateOf(new Date(), tz)),
   });
 }

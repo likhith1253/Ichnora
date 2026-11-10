@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
 import { MIGRATIONS } from "./schema";
+import { maybeCleanupDemos } from "../demo/store";
 
 export type DB = Database.Database;
 
@@ -44,7 +45,16 @@ export function defaultDbPath(): string {
 const g = globalThis as unknown as { __minimiDb?: DB };
 
 export function getDb(): DB {
-  if (!g.__minimiDb) g.__minimiDb = openDatabase(defaultDbPath());
+  if (!g.__minimiDb) {
+    g.__minimiDb = openDatabase(defaultDbPath());
+    // Startup housekeeping: drop expired demo workspaces, sessions and cached
+    // answers. Never fatal, and at most once every ten minutes per process.
+    try {
+      maybeCleanupDemos(g.__minimiDb);
+    } catch {
+      /* housekeeping must never prevent the app from booting */
+    }
+  }
   return g.__minimiDb;
 }
 

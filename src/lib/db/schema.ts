@@ -305,4 +305,77 @@ ALTER TABLE turn_metrics ADD COLUMN search_credits REAL;
 ALTER TABLE turn_metrics ADD COLUMN rounds INTEGER;
 `,
   },
+  {
+    version: 5,
+    name: "identity_and_demo",
+    sql: `
+-- Accounts. No passwords: sign-in is only ever through an OAuth provider.
+CREATE TABLE users (
+  id          TEXT PRIMARY KEY,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL,
+  name        TEXT,
+  email       TEXT,
+  avatar_url  TEXT
+);
+
+-- One row per (provider, provider account). Unique so a returning user is the same user.
+CREATE TABLE oauth_accounts (
+  id                TEXT PRIMARY KEY,
+  user_id           TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider          TEXT NOT NULL,
+  provider_user_id  TEXT NOT NULL,
+  email             TEXT,
+  created_at        TEXT NOT NULL,
+  UNIQUE (provider, provider_user_id)
+);
+CREATE INDEX idx_oauth_user ON oauth_accounts(user_id);
+
+-- Server-side sessions. Only a SHA-256 hash of the token is stored.
+-- kind distinguishes a real account session from a throwaway demo session.
+CREATE TABLE sessions (
+  id            TEXT PRIMARY KEY,
+  user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind          TEXT NOT NULL DEFAULT 'user' CHECK (kind IN ('user','demo')),
+  token_hash    TEXT NOT NULL UNIQUE,
+  created_at    TEXT NOT NULL,
+  expires_at    TEXT NOT NULL,
+  last_used_at  TEXT NOT NULL,
+  user_agent    TEXT
+);
+CREATE INDEX idx_sessions_user ON sessions(user_id);
+CREATE INDEX idx_sessions_expiry ON sessions(expires_at);
+
+-- Workspaces gain an optional owner and a kind. Existing rows stay 'local'.
+ALTER TABLE workspaces ADD COLUMN owner_user_id TEXT REFERENCES users(id) ON DELETE CASCADE;
+ALTER TABLE workspaces ADD COLUMN kind TEXT NOT NULL DEFAULT 'local' CHECK (kind IN ('local','user','demo'));
+ALTER TABLE workspaces ADD COLUMN expires_at TEXT;
+CREATE INDEX idx_workspaces_owner ON workspaces(owner_user_id);
+CREATE INDEX idx_workspaces_kind ON workspaces(kind, expires_at);
+
+-- Per-demo-session budgets that protect the owner's free quotas.
+CREATE TABLE demo_budgets (
+  workspace_id  TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
+  turns_used    INTEGER NOT NULL DEFAULT 0,
+  credits_used  REAL NOT NULL DEFAULT 0,
+  created_at    TEXT NOT NULL,
+  updated_at    TEXT NOT NULL
+);
+
+-- Cache of live answers for the guided demo prompts, keyed by the prompt text.
+CREATE TABLE demo_answer_cache (
+  key         TEXT PRIMARY KEY,
+  payload     TEXT NOT NULL,
+  created_at  TEXT NOT NULL,
+  expires_at  TEXT NOT NULL
+);
+
+-- Demo creations per IP, for rate limiting.
+CREATE TABLE demo_ip_events (
+  ip  TEXT NOT NULL,
+  at  TEXT NOT NULL
+);
+CREATE INDEX idx_demo_ip ON demo_ip_events(ip, at);
+`,
+  },
 ];
