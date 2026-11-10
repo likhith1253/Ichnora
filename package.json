@@ -15,7 +15,8 @@
     "test": "vitest run",
     "eval": "node scripts/eval.mjs",
     "check": "npm run typecheck && npm run lint && npm run test && npm run build",
-    "probe": "node scripts/probe.mjs"
+    "probe": "node scripts/probe.mjs",
+    "eval:live": "vitest run --config vitest.live.config.ts"
   },
   "dependencies": {
     "better-sqlite3": "^12.4.1",

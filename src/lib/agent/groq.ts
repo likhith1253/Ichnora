@@ -3,7 +3,7 @@ import type { AppConfig } from "../env";
 import type { Extraction, SearchProvider } from "../search/types";
 import type { ModelRequest } from "./prompt";
 import { assertSingleSearchTool, type LlmProvider, type ProviderEvent } from "./provider";
-import { linkifyKnownUrls, rewriteCitationMarkers, type RawSource } from "./sources";
+import { linkifyKnownUrls, resolveNumberedCitations, rewriteCitationMarkers, type RawSource } from "./sources";
 import { runWebSearch, WEB_SEARCH_TOOL, type Evidence } from "./webSearchTool";
 import { sharedGate, TokenGate } from "./rateGate";
 
@@ -32,7 +32,7 @@ Live search is not available (not configured, or its free quota is used up). You
 
 const TOOL_NOTES = `## Using web_search
 - Batch: put every query you need into ONE call (up to 5), e.g. one per product. Use include_domains for official sites when known and topic "news" for recent announcements.
-- Cite as Markdown links with the exact URLs returned, e.g. ([neon.com](https://neon.com/pricing)). Do NOT use 【n†…】 citation markers. Never cite a URL that was not returned.
+- Cite by result number in square brackets right after the claim it supports, e.g. "Launch is $19/month [3]" or "[2, 5]". In tables, put [n] in the cell (or a Source column) of the row it supports. The app turns [n] into the exact link. Never invent numbers or URLs, and never write "(search snippet)" or "(full page)" instead of a citation.
 - Use published dates in results to judge freshness; prefer dated changelog/pricing pages.
 - For pricing or releases of NAMED products, set include_domains to their official domains (e.g. ["hubspot.com","pipedrive.com"]). If official results are thin, a second call without include_domains is fine.
 - Label every link with its real domain or page title. Never call a third-party blog or comparison site the "official pricing page"; say what it is (e.g. "per a Pipedrive blog comparison").
@@ -79,6 +79,10 @@ function toolUseFailed(e: unknown): boolean {
   const err = e as { status?: number; message?: string; error?: { code?: string } };
   // Mid-stream failures arrive without an HTTP status, so match on the text.
   return (err?.status === undefined || err.status === 400) && /tool_use_failed|tool call validation|did not match schema|did not call a tool|Tool choice is required/i.test(`${err?.message ?? ""} ${err?.error?.code ?? ""}`);
+}
+
+export function calledToolWhenNone(e: unknown): boolean {
+  return /tool choice is none,? but model called a tool/i.test(String((e as { message?: string })?.message ?? ""));
 }
 
 export function evidenceToSources(evidence: Evidence[]): RawSource[] {
@@ -194,7 +198,16 @@ export class GroqProvider implements LlmProvider {
           console.info(`[groq] round=${round + 1} tool_choice=${choice} tokens=${roundTokens || `~${estimate}`} ms=${Date.now() - t0}`);
           break;
         } catch (e) {
-          if (signal.aborted || !toolUseFailed(e) || choice === "none" || attempt >= 2) throw e;
+          if (signal.aborted || attempt >= 2) throw e;
+          if (choice === "none" && calledToolWhenNone(e)) {
+            // gpt-oss occasionally emits a tool call on the final no-tools round;
+            // nudge it once to write the answer from the evidence it already has.
+            messages.push({ role: "system", content: "Do not call any tools now. Write the final answer using only the search results above, citing them as [n]." });
+            if (text) yield { type: "reset" };
+            text = "";
+            continue;
+          }
+          if (!toolUseFailed(e) || choice === "none") throw e;
           choice = choice === "required" ? "auto" : "none";
           if (text) yield { type: "reset" };
           text = "";
@@ -232,7 +245,7 @@ export class GroqProvider implements LlmProvider {
     }
 
     const urls = numbered.map((h) => h.url);
-    text = linkifyKnownUrls(rewriteCitationMarkers(text, urls), urls);
+    text = linkifyKnownUrls(resolveNumberedCitations(rewriteCitationMarkers(text, urls), urls), urls);
     yield { type: "done", text, sources: evidenceToSources(numbered), searchQueries: queries, searchUnavailable, extractions, usage };
   }
 

@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { buildGroqBody, buildGroqMessages, GroqProvider, type ChatClient } from "@/lib/agent/groq";
 import { assertSingleSearchTool, type ProviderEvent } from "@/lib/agent/provider";
 import type { ModelRequest } from "@/lib/agent/prompt";
-import { collectSources, linkifyKnownUrls, rewriteCitationMarkers } from "@/lib/agent/sources";
+import { collectSources, linkifyKnownUrls, resolveNumberedCitations, rewriteCitationMarkers } from "@/lib/agent/sources";
 import { parseToolArgs, runWebSearch, WEB_SEARCH_TOOL } from "@/lib/agent/webSearchTool";
 import { getConfig } from "@/lib/env";
 import { normalizeDate, resetTavilyBreaker, TavilySearch } from "@/lib/search/tavily";
@@ -331,5 +331,37 @@ describe("bare URL linkification", () => {
     );
     expect(linkifyKnownUrls("[x](https://blog.hubspot.com/sales/hubspot-sales-hub-pricing)", urls)).toBe("[x](https://blog.hubspot.com/sales/hubspot-sales-hub-pricing)");
     expect(linkifyKnownUrls("(https://unknown.example/a)", urls)).toBe("(https://unknown.example/a)");
+  });
+});
+
+describe("stable numbered citations", () => {
+  const urls = ["https://www.hubspot.com/pricing/sales", "https://neon.tech/pricing", "https://supabase.com/pricing"];
+  it("resolves [n] and [n, m] to the exact returned URLs", () => {
+    expect(resolveNumberedCitations("Pro is $90/seat [1]. Launch $19 [2, 3].", urls)).toBe(
+      "Pro is $90/seat ([hubspot.com](https://www.hubspot.com/pricing/sales)). Launch $19 ([neon.tech](https://neon.tech/pricing), [supabase.com](https://supabase.com/pricing)).",
+    );
+  });
+  it("drops out-of-range numbers and leaves markdown links and code alone", () => {
+    expect(resolveNumberedCitations("x [9] y", urls)).toBe("x  y");
+    expect(resolveNumberedCitations("[1](https://keep.me) `arr[1]`", urls)).toBe("[1](https://keep.me) `arr[1]`");
+    expect(resolveNumberedCitations("no results [1]", [])).toBe("no results [1]");
+  });
+});
+
+describe("final-round tool call recovery", () => {
+  it("nudges once when the model calls a tool on the no-tools round", async () => {
+    const search = new FakeSearch();
+    let n = 0;
+    const client: ChatClient = {
+      async create(body) {
+        n++;
+        if (n === 1) return gen(toolCall({ queries: ["neon pricing"] }));
+        if (n === 2) return gen(toolCall({ queries: ["again"] }, "c2"));
+        if (n === 3) throw new Error("Tool choice is none, but model called a tool");
+        return gen(textChunks(`final:${(body.messages as Json[]).at(-1)!.role}`));
+      },
+    };
+    const events = await run(new GroqProvider({ ...CFG, MAX_SEARCHES_PER_TURN: 12 }, search, client));
+    expect((events.at(-1) as { text: string }).text).toBe("final:system");
   });
 });

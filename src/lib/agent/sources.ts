@@ -111,6 +111,29 @@ export function rewriteCitationMarkers(text: string, resultUrls: string[]): stri
 }
 
 /**
+ * Stable source IDs: the model cites "[3]" or "[2, 5]" (cheap and reliable for
+ * gpt-oss); the app resolves each number to the exact URL of result #n from
+ * this turn. Numbers outside the returned range are dropped. A bracket that is
+ * already a Markdown link label ("[3](…)") or inside code is left alone.
+ */
+export function resolveNumberedCitations(text: string, resultUrls: string[]): string {
+  if (resultUrls.length === 0) return text;
+  const parts = text.split(/(```[\s\S]*?```|`[^`\n]*`)/g);
+  return parts
+    .map((part) =>
+      part.startsWith("`")
+        ? part
+        : part.replace(/\[(?:S|source\s*|#)?(\d{1,2}(?:\s*[,;]\s*(?:S|#)?\d{1,2})*)\](?!\()/gi, (_m, list: string) => {
+            const links = [...new Set(list.split(/[,;]/).map((x) => Number(x.replace(/[^\d]/g, ""))))]
+              .filter((n) => Number.isInteger(n) && n >= 1 && n <= resultUrls.length)
+              .map((n) => `[${domainOf(resultUrls[n - 1]!)}](${resultUrls[n - 1]})`);
+            return links.length ? `(${links.join(", ")})` : "";
+          }),
+    )
+    .join("");
+}
+
+/**
  * Turn bare URLs that the search returned — "(https://x)" or "https://x" —
  * into Markdown links so they render and count as citations. URLs the search
  * did not return are left untouched (and later flagged as unverified links).
