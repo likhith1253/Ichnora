@@ -245,7 +245,7 @@ describe("Scenario 7 — no API key", () => {
     const db = memDb();
     const ws = randomUUID();
     const { events, conversationId } = await turn(db, null, { workspaceId: ws, text: "hello" });
-    expect(events).toEqual([expect.objectContaining({ type: "error", code: "config", missingVar: "GROQ_API_KEY" })]);
+    expect(events).toEqual([expect.objectContaining({ type: "error", code: "config", missingVar: "GEMINI_API_KEY" })]);
     expect(listMessages(db, conversationId)).toHaveLength(0);
   });
 });
@@ -264,5 +264,11 @@ describe("Scenario 8 — tool surface", () => {
     expect(p.bodies[0]!.tools).toBeUndefined(); // greeting: no search
     expect(p.bodies[1]!.tools).toEqual([{ type: "browser_search" }]);
     expect(p.bodies[1]!.tool_choice).toBe("auto");
+    // Gemini (default provider): same contract with { googleSearch: {} }.
+    for (const g of p.geminiBodies) {
+      if (g.config.tools !== undefined) assertSingleSearchTool(g.config.tools as object[]);
+    }
+    expect(p.geminiBodies[0]!.config.tools).toBeUndefined();
+    expect(p.geminiBodies[1]!.config.tools).toEqual([{ googleSearch: {} }]);
   });
 });

@@ -11,6 +11,7 @@ import {
   type ProviderEvent,
 } from "@/lib/agent/provider";
 import { collectSources, normalizeUrl, rewriteCitationMarkers } from "@/lib/agent/sources";
+import { buildGeminiRequest, groundingSources, insertGroundingCitations } from "@/lib/agent/gemini";
 import { runTurn } from "@/lib/agent/run";
 import type { ModelRequest } from "@/lib/agent/prompt";
 import { getConfig, providerStatus } from "@/lib/env";
@@ -165,7 +166,7 @@ describe("chat route + config", () => {
     expect(res.headers.get("content-type")).toMatch(/text\/event-stream/);
     const body = await res.text();
     expect(body).toContain("event: error");
-    expect(body).toContain("GROQ_API_KEY");
+    expect(body).toContain("GEMINI_API_KEY");
   });
 
   it("validates input", async () => {
@@ -179,9 +180,55 @@ describe("chat route + config", () => {
   });
 
   it("reports missing variable names without values", () => {
-    expect(providerStatus(getConfig({} as NodeJS.ProcessEnv))).toMatchObject({ provider: "groq", configured: false, missingVar: "GROQ_API_KEY", model: "openai/gpt-oss-120b" });
+    expect(providerStatus(getConfig({} as NodeJS.ProcessEnv))).toMatchObject({ provider: "gemini", configured: false, missingVar: "GEMINI_API_KEY", model: "gemini-2.5-flash" });
+    expect(providerStatus(getConfig({ LLM_PROVIDER: "groq" } as unknown as NodeJS.ProcessEnv))).toMatchObject({ provider: "groq", missingVar: "GROQ_API_KEY" });
     const s = providerStatus(getConfig({ LLM_PROVIDER: "openai", OPENAI_API_KEY: "sk-secret" } as unknown as NodeJS.ProcessEnv));
     expect(s).toMatchObject({ provider: "openai", configured: true });
     expect(JSON.stringify(s)).not.toContain("sk-secret");
+  });
+});
+
+describe("Gemini adapter", () => {
+  it("offers exactly one googleSearch tool, none for recall, and turns 'required' into an instruction", () => {
+    const auto = buildGeminiRequest(REQ, { GEMINI_MODEL: "gemini-2.5-flash" });
+    expect(auto.config.tools).toEqual([{ googleSearch: {} }]);
+    assertSingleSearchTool(auto.config.tools as object[]);
+    expect(auto.contents.at(-1)!.parts!.at(-1)!.text).toContain("<memory_context>");
+    expect(auto.contents.at(-1)!.parts!.at(-1)!.text).toContain("<user_message>\nq\n</user_message>");
+    expect(buildGeminiRequest({ ...REQ, toolChoice: "none" }, { GEMINI_MODEL: "gemini-2.5-flash" }).config.tools).toBeUndefined();
+    const req = buildGeminiRequest({ ...REQ, toolChoice: "required" }, { GEMINI_MODEL: "gemini-2.5-flash" });
+    expect(String(req.config.systemInstruction)).toMatch(/MUST run Google Search/);
+    expect(req.config.thinkingConfig).toEqual({ thinkingBudget: -1 });
+    expect(buildGeminiRequest(REQ, { GEMINI_MODEL: "gemini-3-flash-preview" }).config.thinkingConfig).toBeUndefined();
+  });
+  it("rejects a second tool", () => {
+    expect(() => assertSingleSearchTool([{ googleSearch: {} }, { functionDeclarations: [] }])).toThrow();
+    expect(() => assertSingleSearchTool([{ codeExecution: {} }])).toThrow();
+  });
+  it("merges consecutive same-role turns", () => {
+    const r = buildGeminiRequest({ ...REQ, memoryContext: null, history: [{ role: "user", content: "a" }, { role: "user", content: "b" }, { role: "assistant", content: "c" }] }, { GEMINI_MODEL: "gemini-2.5-flash" });
+    expect(r.contents.map((c) => c.role)).toEqual(["user", "model", "user"]);
+  });
+  it("attaches citations from grounding supports to the right sentence, using only returned sources", () => {
+    const sources = groundingSources([
+      { web: { uri: "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AAA", title: "neon.com" } },
+      { web: { uri: "https://vertexaisearch.cloud.google.com/grounding-api-redirect/BBB", title: "supabase.com" } },
+    ]);
+    expect(sources[0]).toMatchObject({ domain: "neon.com", origin: "search" });
+    const text = "Neon Launch costs $19/month. Supabase Pro costs $25/month.";
+    const out = insertGroundingCitations(
+      text,
+      [
+        { segment: { text: "Supabase Pro costs $25/month." }, groundingChunkIndices: [1] },
+        { segment: { text: "Neon Launch costs $19/month." }, groundingChunkIndices: [0, 0, 9] },
+        { segment: { text: "not in the answer" }, groundingChunkIndices: [0] },
+      ],
+      sources,
+    );
+    expect(out).toBe(
+      "Neon Launch costs $19/month. ([neon.com](https://vertexaisearch.cloud.google.com/grounding-api-redirect/AAA)) Supabase Pro costs $25/month. ([supabase.com](https://vertexaisearch.cloud.google.com/grounding-api-redirect/BBB))",
+    );
+    const stored = collectSources(sources, out, "2026-11-10T00:00:00Z");
+    expect(stored.map((s) => [s.domain, s.origin])).toEqual([["neon.com", "citation"], ["supabase.com", "citation"]]);
   });
 });

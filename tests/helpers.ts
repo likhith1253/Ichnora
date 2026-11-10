@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { openDatabase, type DB } from "@/lib/db";
+import { buildGeminiRequest } from "@/lib/agent/gemini";
 import { buildGroqRequest, type LlmProvider, type ProviderEvent } from "@/lib/agent/provider";
 import type { ModelRequest } from "@/lib/agent/prompt";
 import type { RawSource } from "@/lib/agent/sources";
@@ -25,6 +26,7 @@ export class FakeProvider implements LlmProvider {
   readonly model = "fake-model";
   requests: ModelRequest[] = [];
   bodies: Array<Record<string, unknown>> = [];
+  geminiBodies: Array<ReturnType<typeof buildGeminiRequest>> = [];
   distillReply = ""; // empty → heuristic extraction
   constructor(private script: (req: ModelRequest) => Script = () => ({ text: "OK." })) {}
 
@@ -35,6 +37,7 @@ export class FakeProvider implements LlmProvider {
   async *stream(req: ModelRequest, signal: AbortSignal): AsyncIterable<ProviderEvent> {
     this.requests.push(req);
     this.bodies.push(buildGroqRequest(req, { GROQ_MODEL: "openai/gpt-oss-120b", GROQ_REASONING_EFFORT: "medium" }));
+    this.geminiBodies.push(buildGeminiRequest(req, { GEMINI_MODEL: "gemini-2.5-flash" }));
     const s = this.script(req);
     const canSearch = req.toolChoice !== "none";
     const sources = canSearch ? (s.sources ?? []) : [];
@@ -63,7 +66,7 @@ export function memDb(): DB {
 }
 
 export function deps(db: DB, provider: LlmProvider | null, now: Date = NOW): AgentDeps {
-  return { db, provider, now: () => now, missingVar: provider ? undefined : "GROQ_API_KEY", modelDistill: true, timeoutMs: 10_000 };
+  return { db, provider, now: () => now, missingVar: provider ? undefined : "GEMINI_API_KEY", modelDistill: true, timeoutMs: 10_000 };
 }
 
 export async function collect(gen: AsyncGenerator<TurnEvent>): Promise<TurnEvent[]> {

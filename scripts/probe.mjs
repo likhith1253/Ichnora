@@ -12,10 +12,48 @@ for (const f of [".env.local", ".env"]) {
   }
 }
 
-const provider = (process.env.LLM_PROVIDER || "groq").toLowerCase();
+const provider = (process.env.LLM_PROVIDER || "gemini").toLowerCase();
 const question = process.argv.slice(2).join(" ") || "What is the current Node.js LTS release? Cite the official source.";
 
-if (provider === "groq") {
+if (provider === "gemini") {
+  const key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  if (!key) {
+    console.error("GEMINI_API_KEY is not set (.env.local).");
+    process.exit(1);
+  }
+  const { GoogleGenAI } = await import("@google/genai");
+  const ai = new GoogleGenAI({ apiKey: key });
+  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+  const t0 = Date.now();
+  let first = null;
+  let text = "";
+  let gm = null;
+  try {
+    const stream = await ai.models.generateContentStream({
+      model,
+      contents: question,
+      config: { tools: [{ googleSearch: {} }], ...(model.startsWith("gemini-2.5") ? { thinkingConfig: { thinkingBudget: 1024 } } : {}) },
+    });
+    for await (const chunk of stream) {
+      const c = chunk.candidates?.[0];
+      if (c?.groundingMetadata?.groundingChunks?.length) gm = c.groundingMetadata;
+      const t = (c?.content?.parts ?? []).filter((p) => p.text && !p.thought).map((p) => p.text).join("");
+      if (t) {
+        first ??= Date.now() - t0;
+        text += t;
+      }
+    }
+    console.log(`[gemini ${model}] OK in ${Date.now() - t0} ms (first token ${first} ms)`);
+    console.log(`  search queries: ${JSON.stringify(gm?.webSearchQueries ?? [])}`);
+    console.log(`  grounding chunks: ${gm?.groundingChunks?.length ?? 0} · supports: ${gm?.groundingSupports?.length ?? 0}`);
+    console.log(`  first source: ${gm?.groundingChunks?.[0]?.web?.title ?? "-"} ${gm?.groundingChunks?.[0]?.web?.uri?.slice(0, 80) ?? ""}`);
+    console.log(`  answer: ${text.slice(0, 300).replace(/\s+/g, " ")}…`);
+    if (!gm) console.log("  WARNING: no grounding metadata — Google Search may not be enabled for this key/model.");
+  } catch (e) {
+    console.log(`[gemini ${model}] FAILED ${e.status ?? ""} ${e.message}`);
+    process.exit(1);
+  }
+} else if (provider === "groq") {
   if (!process.env.GROQ_API_KEY) {
     console.error("GROQ_API_KEY is not set (.env.local).");
     process.exit(1);

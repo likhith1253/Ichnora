@@ -5,6 +5,8 @@ export interface RawSource {
   url: string;
   title?: string | null;
   origin: Exclude<SourceOrigin, "answer_link">;
+  /** Publisher domain when the URL is a redirect (e.g. Gemini grounding links). */
+  domain?: string;
 }
 
 const TRACKING = /^(utm_\w+|gclid|fbclid|mc_eid|mc_cid|ref|ref_src|srsltid)$/i;
@@ -46,7 +48,7 @@ export function answerLinks(text: string): Array<{ url: string; title: string }>
 export function collectSources(raw: RawSource[], answer: string, retrievedAt: string): Source[] {
   const byUrl = new Map<string, Source>();
   const rank: Record<SourceOrigin, number> = { citation: 0, search: 1, answer_link: 2 };
-  const add = (url: string, title: string | null | undefined, origin: SourceOrigin) => {
+  const add = (url: string, title: string | null | undefined, origin: SourceOrigin, domain?: string) => {
     const n = normalizeUrl(url);
     if (!n) return;
     const prev = byUrl.get(n);
@@ -54,9 +56,9 @@ export function collectSources(raw: RawSource[], answer: string, retrievedAt: st
       if (!prev.title && title) prev.title = title;
       return;
     }
-    byUrl.set(n, { url: n, title: title?.trim() || prev?.title || null, domain: domainOf(n), retrievedAt, origin });
+    byUrl.set(n, { url: n, title: title?.trim() || prev?.title || null, domain: domain || prev?.domain || domainOf(n), retrievedAt, origin });
   };
-  for (const s of raw) add(s.url, s.title, s.origin);
+  for (const s of raw) add(s.url, s.title, s.origin, s.domain);
   const fromTool = new Set(byUrl.keys());
   for (const l of answerLinks(answer)) {
     const n = normalizeUrl(l.url);

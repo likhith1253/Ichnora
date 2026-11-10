@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { GeminiProvider } from "./gemini";
 import type { AppConfig } from "../env";
 import type { ModelRequest } from "./prompt";
 import type { RawSource } from "./sources";
@@ -18,19 +19,27 @@ export type ProviderEvent =
   | { type: "done"; text: string; sources: RawSource[]; searchQueries: string[] };
 
 export interface LlmProvider {
-  readonly name: "groq" | "openai" | "fake";
+  readonly name: "gemini" | "groq" | "openai" | "fake";
   readonly model: string;
   stream(req: ModelRequest, signal: AbortSignal): AsyncIterable<ProviderEvent>;
   /** Plain completion with NO tools (internal memory distillation). */
   complete(system: string, user: string, signal: AbortSignal): Promise<string>;
 }
 
-export const SEARCH_TOOL_TYPES = new Set(["browser_search", "web_search"]);
+export const SEARCH_TOOL_TYPES = new Set(["browser_search", "web_search", "googleSearch"]);
 
-/** Guard used by both request builders and the test-suite. */
-export function assertSingleSearchTool(tools: ReadonlyArray<{ type: string }> | undefined): void {
+/** The tool's identity: `type` for OpenAI-style tools, the single key for Gemini (`{ googleSearch: {} }`). */
+function toolKind(t: object): string {
+  const typed = (t as { type?: unknown }).type;
+  if (typeof typed === "string") return typed;
+  const keys = Object.keys(t);
+  return keys.length === 1 ? keys[0]! : JSON.stringify(keys);
+}
+
+/** Guard used by every request builder and the test-suite. */
+export function assertSingleSearchTool(tools: ReadonlyArray<object> | undefined): void {
   if (!tools) return;
-  if (tools.length !== 1 || !SEARCH_TOOL_TYPES.has(tools[0]!.type)) {
+  if (tools.length !== 1 || !SEARCH_TOOL_TYPES.has(toolKind(tools[0]!))) {
     throw new Error(`Invariant violated: the model may only receive one web-search tool, got ${JSON.stringify(tools)}`);
   }
 }
@@ -293,6 +302,7 @@ export class OpenAIProvider implements LlmProvider {
 }
 
 export function createProvider(cfg: AppConfig): LlmProvider | null {
+  if (cfg.LLM_PROVIDER === "gemini") return cfg.GEMINI_API_KEY ? new GeminiProvider(cfg) : null;
   if (cfg.LLM_PROVIDER === "openai") return cfg.OPENAI_API_KEY ? new OpenAIProvider(cfg) : null;
   return cfg.GROQ_API_KEY ? new GroqProvider(cfg) : null;
 }

@@ -341,7 +341,8 @@ export default function ChatApp() {
                 {error.missingVar ? (
                   <>
                     <strong>Setup needed.</strong> Add <code>{error.missingVar}</code> to <code>.env.local</code> in the project folder, then restart{" "}
-                    <code>npm run dev</code>. {error.missingVar === "GROQ_API_KEY" && <>A free key is available at console.groq.com/keys.</>}
+                    <code>npm run dev</code>. {error.missingVar === "GEMINI_API_KEY" && <>A free key is available at aistudio.google.com/apikey.</>}
+                    {error.missingVar === "GROQ_API_KEY" && <>A free key is available at console.groq.com/keys.</>}
                   </>
                 ) : (
                   <>
