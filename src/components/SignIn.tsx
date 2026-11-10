@@ -33,7 +33,9 @@ function GoogleMark() {
 
 function nextPath(): string {
   const n = new URLSearchParams(window.location.search).get("next");
-  return n && n.startsWith("/") && !n.startsWith("//") ? n : "/";
+  if (!n) return "/";
+  if (!n.startsWith("/") || n.startsWith("//") || n.includes("\\") || n.includes("\r") || n.includes("\n")) return "/";
+  return n;
 }
 
 /**
