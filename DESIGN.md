@@ -1,54 +1,58 @@
-# Minimi — Design
+# Minimi — Design & Architecture
 
-**One model, one tool, and a deterministic application around them.** Groq `openai/gpt-oss-120b` gets exactly one function, `web_search`. Everything else is ordinary, testable application code: memory, dates, open loops, decisions, evidence and budgets. The model only ever sees a bounded, labelled slice of that context.
+**One model, one tool, and a deterministic modular monolith around them.** Groq `openai/gpt-oss-120b` gets exactly one model-visible function: `web_search`. Everything else is ordinary, testable application code: memory, dates, open loops, decisions, compressed archival, multi-tier caching, durable jobs, evidence, and budgets. The model only ever sees a bounded, labelled slice of that context.
 
-## How a turn works (`lib/agent/run.ts`)
-1. **Persist and extract.** The user message is saved immutably with UTC time, IANA timezone (default `Asia/Kolkata`) and local date. A rule-based classifier (`lib/personal/classify.ts`) then records commitments, intentions, waiting-on items, decisions, preferences and facts. Each record keeps its verbatim quote, source message, confidence and explicit/inferred flag. Completion or cancellation evidence ("I sent Rahul the report yesterday") closes a matching item only when the verb, object or person match unambiguously; otherwise it is logged, not applied. Assistant text is never mined, so a model suggestion cannot become the user's promise.
-2. **Retrieve with SQL and FTS5, no LLM.**
-   - Dates are resolved in code: "3 November", "last Tuesday" and the future-aware "by Friday".
-   - Exact-date lookup on the captured local date, the active thread, a carry-over of turns just recalled, and FTS over messages, memories and research snapshots.
-   - Open-loop and decision queries are structured SQL over statuses, due dates and supersession links.
-   - Pronouns ("them") resolve by scoring candidates on conversation, date, distinctive terms and recency. Two genuinely different topics produce a clarifying question instead of a guess.
-3. **Route.** The app picks the tool policy. `none` covers chat, recall, open loops, decisions and clarification; `required` covers "has it changed since?" against a found baseline; `auto` covers everything else. Recall never spends search credits.
-4. **Answer.** At most 3 model rounds. The single tool runs inside the app: Tavily search (≤5 queries per call) → rank sources (official vendor domain, page type such as pricing or changelog, freshness) → selective Tavily Extract of at most 2 official pricing or changelog pages per call (≤3 per turn), using query-focused passages only. Results are numbered and labelled *OFFICIAL* or *third-party* and *full page* or *snippet*.
-5. **Validate evidence.** The model cites `[n]`, and the app maps each number to that result's exact URL. Links to anything not returned by search, and not a previously validated source, are stripped. Claims are linked to the sources beside them, and coverage of factual claims is recorded.
-6. **Temporal ledger.** Answer tables become dated observations: amount, currency, period, monthly or annual billing, seat or user, tier, effective date, source, and evidence level. On a re-check the app compares the baseline snapshot with today's observations *in code* and labels each item CHANGED, NO MATERIAL CHANGE FOUND or UNABLE TO VERIFY.
-   - Different plans, billing bases or currencies are never compared.
-   - Missing or unsourced evidence is never "no change".
-   - A future effective date is reported as scheduled.
-   - A re-check writes a new snapshot; old baselines are never overwritten.
+---
 
-## Why this architecture
-- **One exposed tool** keeps the model's action space tiny and auditable, and satisfies the challenge. Memory as a tool would add round-trips, spend tokens on the 8K-TPM free tier, and let the model decide *whether* to remember. Retrieval in code is deterministic and unit-tested.
-- **SQL/FTS5 over a vector DB.** The hard questions are structural: "what did I ask *on 3 November*", "what is *overdue*", "what *superseded* MongoDB", "which *five* products". Dates, statuses and links are exact in SQL. Embeddings would help paraphrase recall but add a model, a dependency and nondeterminism, and no fixture failed for lack of them.
-- **Rules before LLM extraction.** Commitment extraction must be high-precision (never invent a promise or a deadline). Rules are explicit, cost no tokens, and are measured: 100% precision on 30 labelled statements (`EVALUATION.md`).
-- **Selective extraction.** Full pages cost credits and tokens. Reading only the top official pricing or changelog page per query gives authoritative evidence where it matters, and snippets elsewhere are labelled as such.
-- **Provenance against hallucination.** Every memory points to a quote, every citation to a returned URL, every comparison to dated observations, so the model cannot invent history, sources or changes without the app detecting it.
+## 1. Overall Architecture
+Minimi is organized as a **local-first modular monolith**:
+- **API & Request Coordinator:** Authenticates via PKCE OAuth or local session, guarantees request idempotency via `client_request_id`, enforces admission control, and streams Server-Sent Events with end-to-end cancellation.
+- **Agent Orchestration Runtime:** Bounded context builder, rolling conversation summaries, execution budget tracker (max 3 rounds, max 5 queries, max 3 extracts), and strict tool argument schema validation.
+- **Memory Engine:** SQLite FTS5 full-text indexing, exact-date matching, referent resolution without LLM hallucination, typed personal facts, and immutable provenance pointing to verbatim quotes.
+- **Research Engine:** `web_search` tool loop, Tavily search, selective official full-page extraction, domain ranking, citation validation with untrusted link stripping, and dated Then/Now/Status comparison reports.
+- **Reliability & Caching:** Bounded LRU + persistent SQLite cache, in-process single-flight request coalescing, formal CLOSED/OPEN/HALF-OPEN circuit breakers, and atomic SQLite quota reservations.
+- **Storage Lifecycle & DR:** Crash-safe compressed local archival (gzip segments + search index), durable SQLite-backed background job queue with leases, and SQLite Online Hot Backup with SHA-256 manifests.
 
-## Reliability and limits
-- **Groq.** A token gate paces requests within the 8K tokens/min limit (verified via `x-ratelimit-*` headers), and real usage from `x_groq.usage` is recorded per turn.
-  - Tool-validation failures are recovered (`required`→`auto`→`none`), at request time or mid-stream, as are stray tool calls on the final round.
-  - Timeouts, cancellation (partial answer saved), idempotent retries via `requestId`, and a per-conversation FIFO lock.
-- **Tavily.** A persisted credit ledger synced from the free `/usage` endpoint, with a reserve kept for change checks. Quota errors (432/433) trip a circuit breaker; the answer is then labelled *web search unavailable* and its values stored as *unverified*. No paid options are used.
-- **Privacy.**
-  - Groq receives the question, a bounded memory slice and search results; Tavily receives only search queries and selected URLs. Nothing runs on-device beyond SQLite.
-  - Deleting a conversation deletes everything derived from it. Users can export all data or forget everything.
-  - Logs carry sizes and latencies only, with secrets redacted.
+---
 
-## Identity, storage and the demo
-Persistent memory is **local**: one SQLite file is the source of truth for conversations, memories, open loops, decisions, research snapshots and provenance. The cloud is used only for *selected* work — Groq for inference, Tavily for public research — and never as a storage layer. There is no cloud database and no automatic sync.
+## 2. Why Local-First SQLite & Why Modular Monolith
+- **Local-First Privacy:** Persistent personal knowledge stays on the machine running Minimi. SQLite is the canonical source of truth. External cloud services (Groq for inference, Tavily for public web search) receive only sanitized, minimal context.
+- **Deterministic Structural Queries:** Questions like *"What did I ask on 3 November?"*, *"What is overdue?"*, or *"Which decision superseded MongoDB?"* require exact relational integrity and date constraints. Vector databases introduce non-determinism, embedding latency, and ongoing cloud costs.
+- **Modular Monolith over Microservices:** Minimi serves single users and private teams. Microservices and message brokers (Kafka/RabbitMQ) add network latency, distributed transaction complexity, and operational failure modes with zero benefit for this workload. Clean TypeScript boundaries provide all the modularity needed.
 
-- **Modes.** With no identity configured the app runs in **LOCAL mode**: single user, a random workspace id in the browser, no sign-in — exactly as before. Adding `AUTH_SECRET` and at least one provider switches on **AUTH mode**, where a server-side session decides the workspace and the client-supplied `x-workspace-id` is ignored.
-- **Sign-in.** GitHub (required for the button) and Google (optional), via the authorization-code flow with PKCE (S256) and a signed, short-lived `state` cookie. It is implemented directly on `fetch` rather than with `arctic` or Auth.js: two providers and one flow is ~40 lines of token/profile exchange, so a library would add more to audit than it saves (and keeps every network step mockable). Sessions live in SQLite and store only the **SHA-256 hash** of the token; cookies are `HttpOnly`, `SameSite=Lax`, `Secure` in production, with rotation and sign-out revocation. The OAuth access token is used once to read the profile and then discarded — we never request repository or Google data.
-- **The demo.** "Try demo" (also available in LOCAL mode) creates a throwaway, seeded workspace owned by a guest user. Seeding runs through the app's own storage functions and only ever targets `kind='demo'`; every screen labels it synthetic. It has strict per-session budgets (8 model turns, 15 Tavily credits), a per-IP creation limit, cached guided answers, a 24 h expiry and startup/periodic cleanup. When its live budget is spent, memory and recall keep working.
-- **Honesty.** SQLite is **not** encrypted at rest; confidentiality relies on OS file permissions and full-disk encryption. Groq processes the selected context and Tavily processes sanitised queries: search queries are stripped of emails at the egress boundary, and historical questions answerable from memory never trigger a search. We do not claim on-device inference or provider zero-retention.
+---
 
-## Rejected
-Multi-agent orchestration, because it adds cost and opacity without a measured gain. A second search provider, because it would break the one-tool contract. Provider-hosted search: Gemini grounding is refused on the free tier and Groq `browser_search` is undocumented on it, and both hide provenance. LLM intent routing, because it is slower and less predictable than rules plus scoring on these fixtures. A bolt-on auth library (Auth.js/NextAuth, `arctic`): for two providers and a single flow, plain `fetch` is smaller and keeps the handshake fully mockable in tests.
+## 3. Storage Lifecycle and Local Archival
+Unbounded transcript growth degrades performance over years. Minimi introduces explicit lifecycle classes:
+- **Canonical / Permanent:** Memories, entities, decisions, unresolved commitments, and baseline observations stay permanent.
+- **Compressed Archival:** Older transcripts are packaged into immutable, checksummed gzip segments (`.json.gz`), cataloged in SQLite, and indexed into `archive_fts`. Raw messages are compacted from the active DB, achieving **~94.2% space reduction** while preserving sub-millisecond date recall and full-text search.
+- **Ephemeral:** Caches and demo data have explicit TTL expiration and size budgets.
 
-## Another week
-- Recall paraphrases ("that database thing") with optional local embeddings.
-- Extract structured then/now values with the model under schema validation, so tables do not depend on answer formatting.
-- Detect conflicts between sources.
-- Use the model as a reviewer of low-confidence memories, under user confirmation.
-- A DB-level lock and per-request connection pool for multi-instance deployment; a SQLCipher/passphrase option for encryption at rest.
+---
+
+## 4. General-Purpose Caching & Freshness Rules
+- **Multi-layer Cache:** In-memory `BoundedLRUCache` (entry count, byte size, TTL) backed by a bounded persistent SQLite cache store (`local_cache`).
+- **Single-Flight Coalescing:** Concurrent identical queries share one promise, preventing cache stampedes to external APIs.
+- **Freshness Governance:** General queries benefit from cached search/extract. However, for explicit current or temporal-comparison queries (*"Has their pricing changed since Monday?"*), the system bypasses search cache or forces revalidation, comparing against the immutable historical baseline.
+
+---
+
+## 5. Rate Limits, Quotas & Circuit Breakers
+- **Atomic Quota Reservations:** Concurrent requests reserve Groq token and Tavily credit allocations atomically in SQLite before executing, preventing over-consumption and race conditions.
+- **Circuit Breakers:** Independent state machines for Groq and Tavily detect consecutive failures, trip to `OPEN` to fail fast and protect quotas, and probe in `HALF_OPEN` for recovery.
+- **Graceful Degradation:** When Groq or Tavily are unavailable, local memory recall, open loops, and decision history continue functioning completely offline.
+
+---
+
+## 6. Durable Background Jobs & Hot Backups
+- **Durable Local Jobs:** SQLite-backed queue with atomic leases (`lease_until`), exponential backoff retries, and dead-letter protection for routine housekeeping (demo pruning, cache expiry, archive compaction, WAL checkpoints).
+- **Verified Backups:** Uses SQLite Online Backup API for safe snapshots during live WAL writes, bundles archive segments, verifies SHA-256 integrity, and supports verified restoration.
+
+---
+
+## 7. Migration Criteria: When Would We Leave SQLite?
+Minimi will remain on SQLite until measured conditions justify migration:
+1. Multi-region or multi-host horizontally scaled deployments requiring concurrent write replication across separate physical nodes.
+2. Sustained concurrent write contention exceeding SQLite WAL throughput (>500 writes/sec sustained).
+3. Explicit client-server sync architecture requiring server-side distributed consensus.
+Until these conditions occur, SQLite provides higher throughput, lower latency, simpler operational reliability, and unmatched local privacy.

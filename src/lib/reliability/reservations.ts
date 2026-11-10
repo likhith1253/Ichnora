@@ -122,3 +122,4 @@ export function getQuotaManager(): QuotaReservationManager {
   g.__minimiQuotaManager ??= new QuotaReservationManager();
   return g.__minimiQuotaManager;
 }
+

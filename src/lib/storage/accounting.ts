@@ -107,3 +107,4 @@ export function checkpointWal(db: DB, mode: "PASSIVE" | "FULL" | "RESTART" | "TR
     /* ignore busy error */
   }
 }
+

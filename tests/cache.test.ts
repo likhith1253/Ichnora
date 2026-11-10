@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { BoundedLRUCache } from "../src/lib/cache/lru";
 import { SingleFlightGroup } from "../src/lib/cache/singleflight";
 import { buildExtractionCacheKey, buildMemoryCacheKey, buildSearchCacheKey } from "../src/lib/cache/keys";
@@ -137,7 +137,15 @@ describe("Caching Subsystem", () => {
         searchCalls++;
         return {
           query: "neon pricing",
-          hits: [{ title: "Pricing", url: "https://neon.tech/pricing", domain: "neon.tech", content: "Details" }],
+          hits: [{
+            title: "Pricing",
+            url: "https://neon.tech/pricing",
+            snippet: "Details",
+            publishedDate: null,
+            score: 0.9,
+            retrievedAt: new Date().toISOString(),
+            query: "neon pricing",
+          }],
         };
       };
 

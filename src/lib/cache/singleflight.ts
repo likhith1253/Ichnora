@@ -50,3 +50,4 @@ export function getSingleFlight(): SingleFlightGroup {
   g.__minimiSingleFlight ??= new SingleFlightGroup();
   return g.__minimiSingleFlight;
 }
+

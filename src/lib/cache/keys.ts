@@ -62,3 +62,4 @@ export function buildExtractionCacheKey(params: {
   const raw = `extract:v${params.extractionVersion ?? 1}:${canonicalUrl}`;
   return hashKey(raw);
 }
+

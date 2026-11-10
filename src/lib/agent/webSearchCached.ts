@@ -1,6 +1,6 @@
-import { hostOf, type PageType } from "../research/official";
+import { hostOf } from "../research/official";
 import { pickForExtraction, rankHits } from "../research/rank";
-import type { Extraction, SearchHit, SearchOutcome, SearchProvider } from "../search/types";
+import type { Extraction, SearchHit, SearchProvider } from "../search/types";
 import { normalizeUrl } from "./sources";
 import { parseToolArgs, type Evidence, type ToolContext, type ToolRun } from "./webSearchTool";
 import { getCacheStore } from "../cache/store";
@@ -72,39 +72,43 @@ export async function runCachedWebSearch(
       const n = normalizeUrl(h.url);
       if (!n || ctx.seenUrls.has(n)) continue;
       ctx.seenUrls.add(n);
-      hits.push(h);
+      const { provenance: _p, tier: _t, ...hit } = h;
       const ev: Evidence = {
+        ...hit,
         sourceNo: numbered.length + 1,
-        title: h.title,
-        url: h.url,
-        normalizedUrl: n,
-        domain: hostOf(h.url),
-        snippet: h.snippet,
-        publishedDate: h.publishedDate,
-        retrievedAt: h.retrievedAt,
-        official: h.official,
-        pageType: h.pageType as PageType,
+        official: h.provenance.official,
+        entity: h.provenance.entity,
+        pageType: h.provenance.pageType,
+        label: h.label,
         evidenceLevel: "snippet",
-        label: h.official ? "OFFICIAL" : "third-party",
-        query: o.query,
+        excerpt: null,
+        extractError: null,
       };
       numbered.push(ev);
       items.push(ev);
+      hits.push(hit);
     }
     if (items.length) fresh.push({ query: o.query, items });
   }
 
   // Selective Tavily Extract of at most 2 official pricing/changelog pages per call
   const extractions: Extraction[] = [];
-  if (search.extract && ctx.extractBudget && ctx.extractBudget.remaining > 0) {
-    const toRead = pickForExtraction(
-      fresh.flatMap((f) => f.items),
-      ctx.extractBudget.remaining,
-      extracted,
-    );
-    if (toRead.length) {
-      const urls = toRead.map((i) => i.url);
-      const focusQuery = allowed.join(" ");
+  const room = Math.min(2, ctx.extractBudget?.remaining ?? 0);
+  if (room > 0 && search.extract) {
+    const picks: Evidence[] = [];
+    for (const f of fresh) {
+      if (picks.length >= room) break;
+      const asRanked = f.items.map((e) => ({
+        ...e,
+        provenance: { official: e.official, entity: e.entity, pageType: e.pageType, domain: hostOf(e.url) },
+        tier: (e.official ? (e.pageType === "pricing" || e.pageType === "changelog" ? 1 : 2) : 3) as 1 | 2 | 3,
+      }));
+      const [pick] = pickForExtraction(asRanked, f.query, 1, extracted);
+      if (pick) picks.push(f.items.find((e) => e.url === pick.url)!);
+    }
+    if (picks.length) {
+      const urls = picks.map((i) => i.url);
+      const focusQuery = allowed.join(" | ");
 
       let outcome: { pages: Extraction[]; error?: unknown } | null = null;
       if (cacheStore && ctx.db) {
@@ -127,7 +131,7 @@ export async function runCachedWebSearch(
         outcome = await search.extract(urls, focusQuery, ctx.signal);
       }
 
-      ctx.extractBudget.remaining -= outcome.pages.length;
+      if (ctx.extractBudget) ctx.extractBudget.remaining -= outcome.pages.length;
       for (const p of outcome.pages) {
         extracted.add(p.url);
         extractions.push(p);

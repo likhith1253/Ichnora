@@ -5,7 +5,6 @@ import { describe, expect, it } from "vitest";
 import { openDatabase } from "../src/lib/db";
 import { JobQueue } from "../src/lib/jobs/queue";
 import { BackupManager } from "../src/lib/storage/backup";
-import { runJobWorkerPass } from "../src/lib/jobs/worker";
 
 describe("Durable Jobs & Backup Subsystem", () => {
   it("leases, completes, and retries jobs with exponential backoff and recovers expired leases", () => {
