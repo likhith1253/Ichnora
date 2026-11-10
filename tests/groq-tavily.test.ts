@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { buildGroqBody, buildGroqMessages, GroqProvider, type ChatClient } from "@/lib/agent/groq";
 import { assertSingleSearchTool, type ProviderEvent } from "@/lib/agent/provider";
 import type { ModelRequest } from "@/lib/agent/prompt";
-import { collectSources } from "@/lib/agent/sources";
+import { collectSources, linkifyKnownUrls, rewriteCitationMarkers } from "@/lib/agent/sources";
 import { parseToolArgs, runWebSearch, WEB_SEARCH_TOOL } from "@/lib/agent/webSearchTool";
 import { getConfig } from "@/lib/env";
 import { normalizeDate, resetTavilyBreaker, TavilySearch } from "@/lib/search/tavily";
@@ -141,17 +141,16 @@ describe("Groq tool loop", () => {
     expect((events.at(-1) as { text: string }).text).toBe("Done.");
   });
 
-  it("never runs more than 4 model rounds", async () => {
+  it("never runs more than 3 model rounds (last one has no tools)", async () => {
     const search = new FakeSearch();
     const groq = new ScriptedGroq([
       toolCall({ queries: ["x1"] }, "c1"),
       toolCall({ queries: ["x2"] }, "c2"),
-      toolCall({ queries: ["x3"] }, "c3"),
       textChunks("Final."),
     ]);
     await run(new GroqProvider({ ...CFG, MAX_SEARCHES_PER_TURN: 12 }, search, groq));
-    expect(groq.bodies).toHaveLength(4);
-    expect(groq.bodies[3]!.tools).toBeUndefined();
+    expect(groq.bodies).toHaveLength(3);
+    expect(groq.bodies[2]!.tools).toBeUndefined();
   });
 
   it("answers an unknown tool name with a correction, never executing it", async () => {
@@ -164,6 +163,23 @@ describe("Groq tool loop", () => {
     expect(search.calls).toHaveLength(0);
     const tool = (groq.bodies[1]!.messages as Json[]).find((m) => m.role === "tool")!;
     expect(String(tool.content)).toMatch(/only tool is web_search/);
+  });
+
+  it("recovers when Groq rejects the tool call mid-stream (schema validation)", async () => {
+    async function* failing(): AsyncIterable<Json> {
+      yield chunk({ content: "Checking" });
+      throw new Error("Tool call validation failed: parameters for tool web_search did not match schema");
+    }
+    let n = 0;
+    const client: ChatClient = {
+      async create(body) {
+        n++;
+        return n === 1 ? failing() : gen(textChunks(`ok:${String(body.tool_choice)}`));
+      },
+    };
+    const events = await run(new GroqProvider(CFG, new FakeSearch(), client));
+    expect(events.some((e) => e.type === "reset")).toBe(true);
+    expect((events.at(-1) as { text: string }).text).toBe("ok:undefined");
   });
 
   it("degrades 'required' to 'auto' when Groq reports tool_use_failed", async () => {
@@ -186,7 +202,7 @@ describe("Groq tool loop", () => {
 
 describe("web_search arguments", () => {
   it("accepts queries[] or a single query, dedupes, caps at 4", () => {
-    expect(parseToolArgs('{"queries":["a b","a b","c d","e f","g h","i j"]}').list).toEqual(["a b", "c d", "e f", "g h"]);
+    expect(parseToolArgs('{"queries":["a b","a b","c d","e f","g h","i j","k l"]}').list).toEqual(["a b", "c d", "e f", "g h", "i j"]);
     expect(parseToolArgs('{"query":"neon pricing"}').list).toEqual(["neon pricing"]);
     expect(parseToolArgs("not json at all").list).toEqual(["not json at all"]);
     expect(parseToolArgs('{"queries":[]}').list).toEqual([]);
@@ -290,5 +306,30 @@ describe("Tavily search layer", () => {
     expect(normalizeDate("2026-10-01T09:00:00Z")).toBe("2026-10-01");
     expect(normalizeDate("not a date")).toBeNull();
     expect(normalizeDate(null)).toBeNull();
+  });
+});
+
+describe("gpt-oss citation markers", () => {
+  const urls = ["https://nodejs.org/en/about/previous-releases", "https://endoflife.date/nodejs"];
+  it("converts markers to links only for URLs the search returned", () => {
+    expect(rewriteCitationMarkers("Node 24 is LTS【1†https://nodejs.org/en/about/previous-releases】.", urls)).toBe(
+      "Node 24 is LTS ([nodejs.org](https://nodejs.org/en/about/previous-releases)).",
+    );
+    expect(rewriteCitationMarkers("See【2†L10-L20】.", urls)).toBe("See ([endoflife.date](https://endoflife.date/nodejs)).");
+    expect(rewriteCitationMarkers("Fake【1†https://evil.example/x】 and【9†L1】.", urls)).toBe("Fake and.");
+  });
+});
+
+describe("bare URL linkification", () => {
+  const urls = ["https://blog.hubspot.com/sales/hubspot-sales-hub-pricing"];
+  it("links bare URLs the search returned, leaves others and existing links alone", () => {
+    expect(linkifyKnownUrls("| 🔄 Changed |(https://blog.hubspot.com/sales/hubspot-sales-hub-pricing) |", urls)).toBe(
+      "| 🔄 Changed |([blog.hubspot.com](https://blog.hubspot.com/sales/hubspot-sales-hub-pricing)) |",
+    );
+    expect(linkifyKnownUrls("See https://blog.hubspot.com/sales/hubspot-sales-hub-pricing.", urls)).toBe(
+      "See [blog.hubspot.com](https://blog.hubspot.com/sales/hubspot-sales-hub-pricing).",
+    );
+    expect(linkifyKnownUrls("[x](https://blog.hubspot.com/sales/hubspot-sales-hub-pricing)", urls)).toBe("[x](https://blog.hubspot.com/sales/hubspot-sales-hub-pricing)");
+    expect(linkifyKnownUrls("(https://unknown.example/a)", urls)).toBe("(https://unknown.example/a)");
   });
 });

@@ -66,7 +66,7 @@ src/
   app/api/memory           read-only memory inspector feed (UI only, not a model tool)
   lib/agent/run.ts         turn orchestration, persistence, idempotency, cancellation
   lib/agent/provider.ts    provider interface + single-tool invariant
-  lib/agent/groq.ts        Groq adapter: streaming tool loop (max 4 rounds, search budget)
+  lib/agent/groq.ts        Groq adapter: streaming tool loop (max 3 rounds, search budget)
   lib/agent/webSearchTool.ts  the one tool: schema, arg validation, execution, result formatting
   lib/search/              search layer interface + Tavily implementation (quota circuit breaker)
   lib/agent/prompt.ts      system rules, intent directives, untrusted memory block

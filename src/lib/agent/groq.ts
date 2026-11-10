@@ -3,7 +3,7 @@ import type { AppConfig } from "../env";
 import type { SearchHit, SearchProvider } from "../search/types";
 import type { ModelRequest } from "./prompt";
 import { assertSingleSearchTool, type LlmProvider, type ProviderEvent } from "./provider";
-import type { RawSource } from "./sources";
+import { linkifyKnownUrls, rewriteCitationMarkers, type RawSource } from "./sources";
 import { runWebSearch, WEB_SEARCH_TOOL } from "./webSearchTool";
 
 /**
@@ -20,7 +20,8 @@ export interface ChatClient {
   create(body: Json, signal: AbortSignal): Promise<AsyncIterable<Json>>;
 }
 
-const MAX_ROUNDS = 4;
+/** search round(s) + a guaranteed final answer; 3 keeps re-sent context within free-tier TPM. */
+const MAX_ROUNDS = 3;
 
 const NO_SEARCH_NOTE = `## Web search unavailable for this turn
 Live search is not available (not configured, or its free quota is used up). You have NO current web access.
@@ -29,9 +30,12 @@ Live search is not available (not configured, or its free quota is used up). You
 - For change checks, restate the saved baseline and mark every item ❓ Cannot verify. Never claim something changed or stayed the same.`;
 
 const TOOL_NOTES = `## Using web_search
-- Batch: put every query you need into ONE call (up to 4), e.g. one per product. Use include_domains for official sites when known and topic "news" for recent announcements.
-- Cite with Markdown links using the exact URLs returned. Never cite a URL that was not returned.
-- Use published dates in results to judge freshness; prefer dated changelog/pricing pages.`;
+- Batch: put every query you need into ONE call (up to 5), e.g. one per product. Use include_domains for official sites when known and topic "news" for recent announcements.
+- Cite as Markdown links with the exact URLs returned, e.g. ([neon.com](https://neon.com/pricing)). Do NOT use 【n†…】 citation markers. Never cite a URL that was not returned.
+- Use published dates in results to judge freshness; prefer dated changelog/pricing pages.
+- For pricing or releases of NAMED products, set include_domains to their official domains (e.g. ["hubspot.com","pipedrive.com"]). If official results are thin, a second call without include_domains is fine.
+- Label every link with its real domain or page title. Never call a third-party blog or comparison site the "official pricing page"; say what it is (e.g. "per a Pipedrive blog comparison").
+- State the billing basis you saw (monthly vs annual, per seat) exactly as the source says; if a source doesn't say, write "billing basis unclear".`;
 
 export function buildGroqMessages(req: ModelRequest, searchAvailable: boolean): Msg[] {
   const wantsSearch = req.toolChoice !== "none";
@@ -72,7 +76,8 @@ function str(v: unknown): string | undefined {
 
 function toolUseFailed(e: unknown): boolean {
   const err = e as { status?: number; message?: string; error?: { code?: string } };
-  return err?.status === 400 && /tool_use_failed|tool call validation|did not call a tool|Tool choice is required/i.test(`${err.message ?? ""} ${err.error?.code ?? ""}`);
+  // Mid-stream failures arrive without an HTTP status, so match on the text.
+  return (err?.status === undefined || err.status === 400) && /tool_use_failed|tool call validation|did not match schema|did not call a tool|Tool choice is required/i.test(`${err?.message ?? ""} ${err?.error?.code ?? ""}`);
 }
 
 export function hitsToSources(hits: SearchHit[]): RawSource[] {
@@ -113,6 +118,7 @@ export class GroqProvider implements LlmProvider {
     const messages = buildGroqMessages(req, searchAvailable);
     const budget = { remaining: this.cfg.MAX_SEARCHES_PER_TURN };
     const seenUrls = new Set<string>();
+    const numbered: SearchHit[] = [];
     const hits: SearchHit[] = [];
     const queries: string[] = [];
     let searchUnavailable = req.toolChoice !== "none" && !searchAvailable;
@@ -124,39 +130,47 @@ export class GroqProvider implements LlmProvider {
       const canSearch = searchAvailable && !searchUnavailable && req.toolChoice !== "none" && budget.remaining > 0 && round < MAX_ROUNDS - 1;
       let choice: "auto" | "required" | "none" = canSearch ? (round === 0 && req.toolChoice === "required" ? "required" : "auto") : "none";
 
-      let stream: AsyncIterable<Json> | null = null;
-      for (let attempt = 0; attempt < 3 && !stream; attempt++) {
-        try {
-          stream = await this.client.create(buildGroqBody(messages, this.cfg, choice), signal);
-        } catch (e) {
-          if (signal.aborted || !toolUseFailed(e) || choice === "none") throw e;
-          choice = choice === "required" ? "auto" : "none"; // degrade, don't fail the turn
-        }
-      }
-
       text = "";
-      const calls = new Map<number, { id: string; name: string; args: string }>();
-      let writing = false;
-      for await (const chunk of stream!) {
-        const delta = ((chunk.choices as Json[] | undefined)?.[0]?.delta ?? {}) as Json;
-        const content = str(delta.content);
-        if (content) {
-          if (!writing) {
-            writing = true;
-            yield { type: "phase", phase: "writing" };
+      let calls = new Map<number, { id: string; name: string; args: string }>();
+      // Groq validates tool calls server-side; a malformed call can fail at
+      // request time OR mid-stream. Either way: retry the round with a weaker
+      // tool policy (required → auto → none) instead of failing the turn.
+      for (let attempt = 0; ; attempt++) {
+        calls = new Map();
+        let writing = false;
+        try {
+          const body = buildGroqBody(messages, this.cfg, choice);
+          // Observability: request size per round (≈ chars/4 tokens), no content.
+          console.info(`[groq] round=${round + 1} tool_choice=${choice} ~${Math.round(JSON.stringify(body.messages).length / 4)} input tokens`);
+          const stream = await this.client.create(body, signal);
+          for await (const chunk of stream) {
+            const delta = ((chunk.choices as Json[] | undefined)?.[0]?.delta ?? {}) as Json;
+            const content = str(delta.content);
+            if (content) {
+              if (!writing) {
+                writing = true;
+                yield { type: "phase", phase: "writing" };
+              }
+              text += content;
+              yield { type: "text", delta: content };
+            }
+            for (const tc of (Array.isArray(delta.tool_calls) ? delta.tool_calls : []) as Json[]) {
+              const idx = typeof tc.index === "number" ? tc.index : 0;
+              const prev = calls.get(idx) ?? { id: "", name: "", args: "" };
+              const fn = (tc.function ?? {}) as Json;
+              calls.set(idx, {
+                id: str(tc.id) ?? prev.id,
+                name: prev.name + (str(fn.name) ?? ""),
+                args: prev.args + (typeof fn.arguments === "string" ? fn.arguments : ""),
+              });
+            }
           }
-          text += content;
-          yield { type: "text", delta: content };
-        }
-        for (const tc of (Array.isArray(delta.tool_calls) ? delta.tool_calls : []) as Json[]) {
-          const idx = typeof tc.index === "number" ? tc.index : 0;
-          const prev = calls.get(idx) ?? { id: "", name: "", args: "" };
-          const fn = (tc.function ?? {}) as Json;
-          calls.set(idx, {
-            id: str(tc.id) ?? prev.id,
-            name: prev.name + (str(fn.name) ?? ""),
-            args: prev.args + (typeof fn.arguments === "string" ? fn.arguments : ""),
-          });
+          break;
+        } catch (e) {
+          if (signal.aborted || !toolUseFailed(e) || choice === "none" || attempt >= 2) throw e;
+          choice = choice === "required" ? "auto" : "none";
+          if (text) yield { type: "reset" };
+          text = "";
         }
       }
 
@@ -177,7 +191,7 @@ export class GroqProvider implements LlmProvider {
           messages.push({ role: "tool", tool_call_id: c.id, content: `Unknown tool "${c.name}". The only tool is web_search.` });
           continue;
         }
-        const run = await runWebSearch(c.args, this.search, { signal, seenUrls, budget });
+        const run = await runWebSearch(c.args, this.search, { signal, seenUrls, budget, numbered });
         for (const q of run.queries) {
           queries.push(q);
           yield { type: "search", query: q };
@@ -190,6 +204,8 @@ export class GroqProvider implements LlmProvider {
       yield { type: "phase", phase: "thinking" };
     }
 
+    const urls = numbered.map((h) => h.url);
+    text = linkifyKnownUrls(rewriteCitationMarkers(text, urls), urls);
     yield { type: "done", text, sources: hitsToSources(hits), searchQueries: queries, searchUnavailable };
   }
 

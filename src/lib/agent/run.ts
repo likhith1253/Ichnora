@@ -199,7 +199,11 @@ export async function* runTurn(deps: AgentDeps, input: TurnInput, signal: AbortS
     } catch (e) {
       if (signal.aborted) failure = { code: "cancelled", message: "Stopped." };
       else if (ctrl.signal.aborted) failure = { code: "timeout", message: "The model took too long to respond. Please try again." };
-      else failure = errorMessage(e);
+      else {
+        failure = errorMessage(e);
+        const err = e as { status?: number; message?: string };
+        console.error(`[agent] model error status=${err?.status ?? "-"}: ${String(err?.message ?? e).slice(0, 500)}`);
+      }
     } finally {
       clearTimeout(timer);
       signal.removeEventListener("abort", onAbort);

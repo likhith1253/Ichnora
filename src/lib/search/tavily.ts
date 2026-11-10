@@ -10,7 +10,7 @@ import type { SearchHit, SearchOutcome, SearchProvider, SearchQuery } from "./ty
  */
 
 const ENDPOINT = "https://api.tavily.com/search";
-const SNIPPET_CHARS = 420;
+const SNIPPET_CHARS = 320;
 
 type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 

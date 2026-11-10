@@ -82,3 +82,42 @@ export function collectSources(raw: RawSource[], answer: string, retrievedAt: st
   }
   return [...byUrl.values()].sort((a, b) => rank[a.origin] - rank[b.origin]).slice(0, 40);
 }
+
+/**
+ * gpt-oss sometimes cites in its native format — 【1†https://x】, 【3†L10-L20】,
+ * 【turn0search2】 — instead of Markdown. Convert to links ONLY when the URL is
+ * one the search returned (directly, or by result number); otherwise drop the
+ * marker. Never invents a link.
+ */
+export function rewriteCitationMarkers(text: string, resultUrls: string[]): string {
+  const known = new Map(resultUrls.map((u) => [normalizeUrl(u), u] as const));
+  return text.replace(/\s?【([^】]{1,400})】/g, (_m, inner: string) => {
+    const direct = inner.match(/https?:\/\/[^\s†】]+/)?.[0];
+    let url: string | undefined;
+    // A URL the search never returned is dropped — never remapped by number.
+    if (direct) url = known.get(normalizeUrl(direct));
+    else {
+      const n = Number(inner.match(/^(\d{1,3})†|search(\d{1,3})/)?.slice(1).find(Boolean));
+      if (Number.isInteger(n) && n >= 1) url = resultUrls[n - 1];
+    }
+    return url ? ` ([${domainOf(url)}](${url}))` : "";
+  });
+}
+
+/**
+ * Turn bare URLs that the search returned — "(https://x)" or "https://x" —
+ * into Markdown links so they render and count as citations. URLs the search
+ * did not return are left untouched (and later flagged as unverified links).
+ */
+export function linkifyKnownUrls(text: string, resultUrls: string[]): string {
+  const known = new Map(resultUrls.map((u) => [normalizeUrl(u), u] as const));
+  return text.replace(/(\]\()?(\(?)(https?:\/\/[^\s)<>\]|]+)(\)?)/g, (m, mdOpen: string | undefined, open: string, url: string, close: string) => {
+    if (mdOpen) return m; // already a Markdown link target
+    const clean = url.replace(/[.,;:!?'"]+$/, "");
+    const trail = url.slice(clean.length);
+    const hit = known.get(normalizeUrl(clean));
+    if (!hit) return m;
+    const link = `[${domainOf(hit)}](${hit})`;
+    return open && close ? `(${link})${trail}` : `${open}${link}${trail}${close}`;
+  });
+}

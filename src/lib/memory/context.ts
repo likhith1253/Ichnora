@@ -2,7 +2,7 @@ import type { MemoryItem, Message } from "../db/repo";
 import { formatLongDate, localTimeOf } from "../time/dates";
 import type { RecalledTurn, Retrieval } from "./retrieval";
 
-const MAX_CONTEXT_CHARS = 9_000; // ~2.3K tokens: bounded for free-tier token budgets
+const MAX_CONTEXT_CHARS = 6_500; // ~2.3K tokens: bounded for free-tier token budgets
 
 /** Neutralise anything that could close or spoof our delimiters. */
 export function sanitizeUntrusted(text: string, max: number): string {
@@ -61,7 +61,7 @@ export function renderMemoryContext(r: Retrieval): string | null {
 
   if (r.carriedTurns.length) {
     parts.push("## Earlier turns this conversation was just discussing (the baseline for this follow-up)");
-    r.carriedTurns.forEach((t, i) => parts.push(renderTurn(t, i + 1, 2400)));
+    r.carriedTurns.forEach((t, i) => parts.push(renderTurn(t, i + 1, 1400)));
   }
 
   if (r.referent) {
@@ -71,7 +71,7 @@ export function renderMemoryContext(r: Retrieval): string | null {
     const turns = r.referentTurns.filter((t) => !covered.has(t.user.id));
     if (turns.length) {
       parts.push("  Original turns this memory was distilled from:");
-      turns.slice(0, 3).forEach((t, i) => parts.push(renderTurn(t, i + 1, 2400)));
+      turns.slice(0, 2).forEach((t, i) => parts.push(renderTurn(t, i + 1, 1400)));
     }
   }
 
