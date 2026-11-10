@@ -35,12 +35,20 @@
   - Deleting a conversation deletes everything derived from it. Users can export all data or forget everything.
   - Logs carry sizes and latencies only, with secrets redacted.
 
+## Identity, storage and the demo
+Persistent memory is **local**: one SQLite file is the source of truth for conversations, memories, open loops, decisions, research snapshots and provenance. The cloud is used only for *selected* work — Groq for inference, Tavily for public research — and never as a storage layer. There is no cloud database and no automatic sync.
+
+- **Modes.** With no identity configured the app runs in **LOCAL mode**: single user, a random workspace id in the browser, no sign-in — exactly as before. Adding `AUTH_SECRET` and at least one provider switches on **AUTH mode**, where a server-side session decides the workspace and the client-supplied `x-workspace-id` is ignored.
+- **Sign-in.** GitHub (required for the button) and Google (optional), via the authorization-code flow with PKCE (S256) and a signed, short-lived `state` cookie. It is implemented directly on `fetch` rather than with `arctic` or Auth.js: two providers and one flow is ~40 lines of token/profile exchange, so a library would add more to audit than it saves (and keeps every network step mockable). Sessions live in SQLite and store only the **SHA-256 hash** of the token; cookies are `HttpOnly`, `SameSite=Lax`, `Secure` in production, with rotation and sign-out revocation. The OAuth access token is used once to read the profile and then discarded — we never request repository or Google data.
+- **The demo.** "Try demo" (also available in LOCAL mode) creates a throwaway, seeded workspace owned by a guest user. Seeding runs through the app's own storage functions and only ever targets `kind='demo'`; every screen labels it synthetic. It has strict per-session budgets (8 model turns, 15 Tavily credits), a per-IP creation limit, cached guided answers, a 24 h expiry and startup/periodic cleanup. When its live budget is spent, memory and recall keep working.
+- **Honesty.** SQLite is **not** encrypted at rest; confidentiality relies on OS file permissions and full-disk encryption. Groq processes the selected context and Tavily processes sanitised queries: search queries are stripped of emails at the egress boundary, and historical questions answerable from memory never trigger a search. We do not claim on-device inference or provider zero-retention.
+
 ## Rejected
-Multi-agent orchestration, because it adds cost and opacity without a measured gain. A second search provider, because it would break the one-tool contract. Provider-hosted search: Gemini grounding is refused on the free tier and Groq `browser_search` is undocumented on it, and both hide provenance. LLM intent routing, because it is slower and less predictable than rules plus scoring on these fixtures.
+Multi-agent orchestration, because it adds cost and opacity without a measured gain. A second search provider, because it would break the one-tool contract. Provider-hosted search: Gemini grounding is refused on the free tier and Groq `browser_search` is undocumented on it, and both hide provenance. LLM intent routing, because it is slower and less predictable than rules plus scoring on these fixtures. A bolt-on auth library (Auth.js/NextAuth, `arctic`): for two providers and a single flow, plain `fetch` is smaller and keeps the handshake fully mockable in tests.
 
 ## Another week
 - Recall paraphrases ("that database thing") with optional local embeddings.
 - Extract structured then/now values with the model under schema validation, so tables do not depend on answer formatting.
 - Detect conflicts between sources.
 - Use the model as a reviewer of low-confidence memories, under user confirmation.
-- Use multi-user auth and a DB-level lock for multi-instance deployment.
+- A DB-level lock and per-request connection pool for multi-instance deployment; a SQLCipher/passphrase option for encryption at rest.

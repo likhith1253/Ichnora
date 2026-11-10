@@ -39,6 +39,42 @@ Open http://localhost:3000.
 
 The **Open loops** and **Memory** views show the same records: their provenance (quote, date, conversation), corrections, and deletion.
 
+## Accounts and the demo
+
+Minimi is **local-first**: your conversations, memories, open loops and research history live in the local SQLite file. Signing in only establishes *identity* — it does not move your data to any cloud service, and there is no background sync.
+
+### Two modes
+
+- **LOCAL mode (default).** No OAuth keys configured: a single user, no sign-in screen, a random workspace id kept in the browser. Works exactly as before. This is a single-user trust model — do not expose it as a shared deployment.
+- **AUTH mode.** Turns on automatically when `AUTH_SECRET` **and** at least one provider (`*_CLIENT_ID` + `*_CLIENT_SECRET`) are set. The workspace is then decided by the server-side session, and the browser-supplied header is ignored. Every route requires a session.
+
+There is no email/password: sign-in is only via OAuth.
+
+### GitHub (required for the button)
+
+1. GitHub → **Settings → Developer settings → OAuth Apps → New OAuth App**.
+2. Homepage URL: `http://localhost:3000`
+3. Authorization callback URL: `http://localhost:3000/api/auth/callback/github`
+4. Copy the client id/secret into `.env.local` as `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`, and set `AUTH_SECRET` to any long random string:
+
+   ```bash
+   node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+   ```
+
+### Google (optional)
+
+1. Google Cloud console → **APIs & Services → Credentials → Create credentials → OAuth client ID → Web application**.
+2. Authorized redirect URI: `http://localhost:3000/api/auth/callback/google`
+3. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+
+Scopes are minimal (`read:user user:email` for GitHub, `openid email profile` for Google); tokens are used once to read your profile and never stored.
+
+Behind a proxy or tunnel, set `PUBLIC_BASE_URL` to the public origin (e.g. `https://minimi.example`) so the callback URLs are built correctly. On first sign-in you are offered the chance to attach your existing local workspace to the account — this is never automatic. **Account deletion** removes the user, its workspaces and everything derived from them. The **"Your data"** menu also has an account section and a sign-out.
+
+### Try demo
+
+"Try the demo" appears on the sign-in screen and, in LOCAL mode, in the sidebar. It creates a throwaway, seeded workspace (a CRM shortlist snapshot, a later re-check with a computed change report, a dated Node.js question, commitments/waiting/intentions and a MongoDB→PostgreSQL decision history). Everything on screen is labelled synthetic, and it only ever lives in a `kind='demo'` workspace. Demo sessions have their own budget (default 8 model turns, 15 Tavily credits) and a per-IP creation limit, suggested answers are cached, and the workspace expires after 24 h. When the live budget is spent, memory, open loops and history keep working. Use **Reset demo** to start over, or **Sign in** to keep your own data.
+
 ## Environment variables
 
 | Variable | Required | Default | Purpose |
@@ -55,6 +91,15 @@ The **Open loops** and **Memory** views show the same records: their provenance 
 | `MEMORY_DISTILL` | no | `heuristic` | `model` adds one LLM call per research turn |
 | `MINIMI_DB_PATH` | no | `./data/minimi.db` | SQLite file (git-ignored) |
 | `AGENT_TIMEOUT_MS` | no | `120000` | Per-turn timeout |
+| `AUTH_SECRET` | for AUTH mode | – | Signs the session cookie and OAuth state. Any long random string |
+| `PUBLIC_BASE_URL` | no | request origin | Public origin used to build OAuth callback URLs |
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | for GitHub sign-in | – | GitHub OAuth app |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | for Google sign-in | – | Google OAuth client |
+| `DEMO_ENABLED` | no | `true` | Show and allow "Try demo" |
+| `DEMO_TTL_HOURS` | no | `24` | How long a demo workspace lives |
+| `DEMO_MAX_TURNS` / `DEMO_MAX_CREDITS` | no | `8` / `15` | Per-demo model turns and Tavily credits |
+| `DEMO_CACHE_TTL_MINUTES` | no | `240` | Freshness of cached guided answers |
+| `DEMO_RATE_LIMIT_MAX` / `DEMO_RATE_LIMIT_WINDOW_MINUTES` | no | `5` / `60` | Demo creations allowed per IP |
 
 ## Scripts
 
@@ -80,9 +125,14 @@ src/lib/
                lifecycle, corrections, events) · queries.ts (open loops, decision timelines, personal context)
   memory/      query.ts (intent & terms) · retrieval.ts (dates, FTS, referents, routing) · context.ts · extract.ts
   time/        dates.ts (timezone-correct past refs) · due.ts (future deadlines)
-  db/          schema.ts (forward-only migrations v1–v4) · repo.ts
-src/app/api/   chat (SSE) · conversations · memory · personal (open loops, corrections) · workspace (export / forget) · status
-src/components/ chat view, sources & evidence, Then/Now card, open loops view, memory view, settings
+  auth/        providers.ts (GitHub/Google code+PKCE) · sessions.ts (hashed tokens) · accounts.ts · csrf.ts · cookies.ts ·
+               flow.ts (signed state) · sign.ts · pkce.ts · tokens.ts
+  demo/        store.ts (lifecycle, cache, cleanup) · seed.ts (deterministic, demo-only) · budget.ts · rate.ts · prompts.ts
+  db/          schema.ts (forward-only migrations v1–v5) · repo.ts
+src/app/api/   chat (SSE) · conversations · memory · personal (open loops, corrections) · workspace (export / forget) · status ·
+               auth (login, callback/[provider], me, signout, claim, account) · demo (start, reset)
+src/app/       page (chat) · signin (shown only in AUTH mode)
+src/components/ chat view, sources & evidence, Then/Now card, open loops view, memory view, settings, sign-in, demo bar
 ```
 
 **Data model:**
@@ -91,21 +141,27 @@ src/components/ chat view, sources & evidence, Then/Now card, open loops view, m
 - `memory_items`: research snapshots; their dated, normalised values live in `observations`.
 - Answer evidence: `turn_sources` (official flag, evidence level, source number), `source_extractions`, `claim_evidence`, `change_reports`.
 - Budgets and metrics: `api_usage` (credit ledger) and `turn_metrics` (tokens, credits, latency).
+- Identity (v5): `users`, `oauth_accounts` (unique provider + provider user id), `sessions` (hashed token), and `workspaces.owner_user_id` / `kind` / `expires_at`. Demo tables: `demo_budgets`, `demo_answer_cache`, `demo_ip_events`.
 
 ## Privacy
 
-- **SQLite is the only store.** It is local, under `./data`, and git-ignored.
-- **Groq** receives the question, a bounded slice of relevant memory, and search results.
-- **Tavily** receives search queries and selected URLs only, never your memories or conversations.
+- **SQLite is the only store.** It is local, under `./data`, and git-ignored. There is no cloud database and no automatic sync.
+- **Groq** receives the question, a bounded slice of *retrieved* memory, and search results — never the whole database.
+- **Tavily** receives search queries and selected URLs only, never your memories or conversations. Queries are stripped of emails at the egress boundary, and questions answerable from memory ("what did I ask on 3 November?") never trigger a search.
+- **Signing in** establishes identity only. Sessions live in SQLite and only the **SHA-256 hash** of the session token is stored; OAuth access tokens are read once for your profile and never persisted.
 - **Deleting a conversation** deletes every memory, research snapshot and observation derived from it.
 - **The "Your data" menu** exports everything as JSON or forgets everything.
 - **Logs** contain sizes and latencies, with secrets redacted.
+- **Not encrypted at rest.** SQLite is a plain file: confidentiality relies on OS file permissions and full-disk encryption. If the app is hosted on a remote server, the database sits on that host — that is not "local to the end user".
 
 ## Troubleshooting
 
 - **"The API key was rejected"**: check `.env.local`. It takes priority over machine-wide variables with the same name.
 - **"Rate limit reached" or slow answers**: Groq's free tier allows about 8K tokens per minute. The app paces requests to stay under it, so a burst of research questions waits instead of failing.
 - **"Web search unavailable"**: the Tavily key is missing, or the monthly credits (or the reserve) are used up. The answer is then marked unverified.
+- **OAuth `redirect_uri_mismatch` or `state` errors**: the callback URL must match exactly — `http://localhost:3000/api/auth/callback/github` (or `/google`). Behind a proxy/tunnel set `PUBLIC_BASE_URL` to the public origin. A `state` error also appears if the sign-in tab was left open more than 10 minutes (the handshake cookie expired).
+- **Sign-in never appears**: AUTH mode needs `AUTH_SECRET` **and** a full provider pair. Without them the app stays in LOCAL mode, by design.
+- **The demo says its live budget is spent**: that demo session used its small turn/credit allowance. Memory, open loops and history still work; **Reset demo** starts a fresh one.
 - **`better-sqlite3` fails to install**: use Node 20 LTS with the standard Windows build tools, or a Node version with prebuilt binaries.
 
 ## Limitations
@@ -113,4 +169,5 @@ src/components/ chat view, sources & evidence, Then/Now card, open loops view, m
 - Statement extraction is rule-based. It is precise on the patterns it knows, but misses unusual phrasings (see `EVALUATION.md`).
 - Then/now values are parsed from the answer's tables. If the model writes prose instead, the computed report says it cannot verify.
 - Tavily `published_date` is an estimate and is often missing for non-news pages.
-- Single user and single process: the workspace id lives in the browser's localStorage, and turns are serialised in process.
+- In LOCAL mode the app is single-user and single-process: the workspace id lives in the browser's localStorage, and turns are serialised in process. Plain HTTP only; it is a single-user trust model, not a hardened multi-tenant deployment, and SQLite is not encrypted at rest.
+- Authentication is OAuth-only (GitHub, optionally Google); there is no email/password and no account recovery beyond signing in with the same provider again.

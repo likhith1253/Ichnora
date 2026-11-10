@@ -107,3 +107,43 @@ New defects found during evaluation and fixed (each with a regression test):
 - citations written as "(search snippet)" labels instead of links
 - stray tool calls on the final round
 - daily-limit 429 misreported as a per-minute limit
+
+## 10. Identity and demo phase (local-first, cloud-assisted)
+
+Added optional authentication and a disposable demo **without** changing the
+storage model: SQLite remains the source of truth, and the cloud stays
+inference-only (Groq) and research-only (Tavily). See `ARCHITECTURE_VERIFICATION.md`
+for the full review; outcome **CASE A** (architecture correct).
+
+- **Migration v5** (`identity_and_demo`, forward-only): `users`, `oauth_accounts`
+  (unique `provider, provider_user_id`), `sessions` (hashed token), and
+  `workspaces` gains `owner_user_id`, `kind` (`local|user|demo`) and `expires_at`.
+  Demo tables: `demo_budgets`, `demo_answer_cache`, `demo_ip_events`. Indexes on
+  the new lookup columns.
+- **Two modes.** LOCAL (default) is behaviourally unchanged. AUTH activates on
+  `AUTH_SECRET` + one provider; a single `resolveWorkspace()` decides the
+  workspace for every route — from the session in AUTH (client header ignored,
+  401 without a session), from the header in LOCAL.
+- **Sign-in.** GitHub (required for the button) + Google (optional), authorization
+  code + PKCE(S256) + signed `state`; hand-rolled on `fetch` instead of `arctic`
+  (two providers, one flow — a smaller audit surface, and every step is mockable).
+  Access tokens are used once for the profile and never persisted.
+- **Sessions.** Stored locally; only the SHA-256 hash is kept; httpOnly /
+  SameSite=Lax / Secure-in-prod cookie with rotation and sign-out revocation.
+  Same-origin (CSRF) check on state-changing requests in AUTH mode.
+- **Demo.** Isolation by `kind='demo'` only; deterministic seeding through the
+  app's own storage functions (refuses non-demo workspaces); per-session turn and
+  credit budgets; per-IP rate limit; cached guided answers; 24 h TTL with startup
+  + periodic cleanup. Budget exhaustion leaves memory/recall working.
+- **Security/privacy tests added** (`tests/auth.test.ts` 30, `tests/demo.test.ts`
+  17): cross-user IDOR across chat/conversations/memory/personal/workspace, CSRF,
+  session fixation/rotation/hashing, open-redirect, cookie flags, claim/delete
+  cascade, demo determinism/budgets/expiry, rate-limit windows.
+- **Defect found and fixed:** model-drafted Tavily queries left the machine
+  verbatim. Added `search/sanitize.ts` (strips emails at the egress boundary) and
+  applied it in `search()` and `extract()`; a pure-identity query now makes no
+  network call (`tests/groq-tavily.test.ts`).
+- **Documented limits:** SQLite is not encrypted at rest; LOCAL mode is a
+  single-user trust model; a remote deployment keeps SQLite on the host, not on
+  the user's device.
+
