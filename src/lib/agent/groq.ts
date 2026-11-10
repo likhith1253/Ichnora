@@ -81,6 +81,25 @@ function toolUseFailed(e: unknown): boolean {
   return (err?.status === undefined || err.status === 400) && /tool_use_failed|tool call validation|did not match schema|did not call a tool|Tool choice is required/i.test(`${err?.message ?? ""} ${err?.error?.code ?? ""}`);
 }
 
+/**
+ * Replace assistant tool_calls + tool results with one system message holding
+ * the same evidence (numbers preserved), in place. Used only for the final
+ * synthesis retry.
+ */
+export function foldToolExchange(messages: Msg[]): void {
+  const evidence: string[] = [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]!;
+    if (m.role === "tool") {
+      evidence.unshift(String(m.content));
+      messages.splice(i, 1);
+    } else if (m.role === "assistant" && Array.isArray(m.tool_calls)) {
+      messages.splice(i, 1);
+    }
+  }
+  if (evidence.length) messages.push({ role: "system", content: `Evidence gathered by web search this turn (cite by [n]):\n\n${evidence.join("\n\n")}` });
+}
+
 export function calledToolWhenNone(e: unknown): boolean {
   return /tool choice is none,? but model called a tool/i.test(String((e as { message?: string })?.message ?? ""));
 }
@@ -200,9 +219,11 @@ export class GroqProvider implements LlmProvider {
         } catch (e) {
           if (signal.aborted || attempt >= 2) throw e;
           if (choice === "none" && calledToolWhenNone(e)) {
-            // gpt-oss occasionally emits a tool call on the final no-tools round;
-            // nudge it once to write the answer from the evidence it already has.
-            messages.push({ role: "system", content: "Do not call any tools now. Write the final answer using only the search results above, citing them as [n]." });
+            // gpt-oss (harmony format) keeps emitting tool calls while the
+            // conversation still contains tool-call structure. Fold the tool
+            // exchange into plain evidence text so the final request has none.
+            foldToolExchange(messages);
+            messages.push({ role: "system", content: "Do not call any tools. Write the final answer now using only the evidence above, citing it as [n]." });
             if (text) yield { type: "reset" };
             text = "";
             continue;

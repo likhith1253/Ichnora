@@ -4,7 +4,7 @@
  * handling and source provenance without any API key or network.
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { buildGroqBody, buildGroqMessages, GroqProvider, type ChatClient } from "@/lib/agent/groq";
+import { buildGroqBody, buildGroqMessages, foldToolExchange, GroqProvider, type ChatClient } from "@/lib/agent/groq";
 import { assertSingleSearchTool, type ProviderEvent } from "@/lib/agent/provider";
 import type { ModelRequest } from "@/lib/agent/prompt";
 import { collectSources, linkifyKnownUrls, resolveNumberedCitations, rewriteCitationMarkers } from "@/lib/agent/sources";
@@ -363,5 +363,19 @@ describe("final-round tool call recovery", () => {
     };
     const events = await run(new GroqProvider({ ...CFG, MAX_SEARCHES_PER_TURN: 12 }, search, client));
     expect((events.at(-1) as { text: string }).text).toBe("final:system");
+  });
+  it("folds the tool exchange into plain evidence so no tool structure remains", () => {
+    const msgs: Json[] = [
+      { role: "system", content: "rules" },
+      { role: "user", content: "q" },
+      { role: "assistant", content: null, tool_calls: [{ id: "a" }] },
+      { role: "tool", tool_call_id: "a", content: "[1] OFFICIAL x — URL: https://x.com" },
+    ];
+    foldToolExchange(msgs);
+    expect(msgs.map((m) => m.role)).toEqual(["system", "user", "system"]);
+    expect(String(msgs[2]!.content)).toContain("[1] OFFICIAL x");
+  });
+  it("resolves bare gpt-oss markers like 【3】", () => {
+    expect(rewriteCitationMarkers("Price $90【1】.", ["https://www.hubspot.com/pricing/sales"])).toBe("Price $90 ([hubspot.com](https://www.hubspot.com/pricing/sales)).");
   });
 });

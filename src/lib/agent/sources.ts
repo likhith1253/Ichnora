@@ -103,7 +103,8 @@ export function rewriteCitationMarkers(text: string, resultUrls: string[]): stri
     // A URL the search never returned is dropped — never remapped by number.
     if (direct) url = known.get(normalizeUrl(direct));
     else {
-      const n = Number(inner.match(/^(\d{1,3})†|search(\d{1,3})/)?.slice(1).find(Boolean));
+      // 【3】, 【3†L1-L4】, 【turn0search3】 — all mean result #3.
+      const n = Number(inner.match(/^\s*(\d{1,3})\s*(?:†|$)|search(\d{1,3})/)?.slice(1).find(Boolean));
       if (Number.isInteger(n) && n >= 1) url = resultUrls[n - 1];
     }
     return url ? ` ([${domainOf(url)}](${url}))` : "";
