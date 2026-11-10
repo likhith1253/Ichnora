@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { openDatabase, type DB } from "@/lib/db";
 import { buildGeminiRequest } from "@/lib/agent/gemini";
-import { buildGroqRequest, type LlmProvider, type ProviderEvent } from "@/lib/agent/provider";
+import { buildOpenAIRequest, type LlmProvider, type ProviderEvent } from "@/lib/agent/provider";
 import type { ModelRequest } from "@/lib/agent/prompt";
 import type { RawSource } from "@/lib/agent/sources";
 import { runTurn, type AgentDeps, type TurnEvent } from "@/lib/agent/run";
@@ -18,7 +18,7 @@ export interface Script {
 
 /**
  * Deterministic stand-in for the LLM at the provider boundary. It records each
- * request and the exact provider body that would be sent to Groq, and "searches"
+ * request and the exact provider bodies that would be sent (OpenAI-style and Gemini), and "searches"
  * only when the request allows tools — mimicking the real contract.
  */
 export class FakeProvider implements LlmProvider {
@@ -36,8 +36,8 @@ export class FakeProvider implements LlmProvider {
 
   async *stream(req: ModelRequest, signal: AbortSignal): AsyncIterable<ProviderEvent> {
     this.requests.push(req);
-    this.bodies.push(buildGroqRequest(req, { GROQ_MODEL: "openai/gpt-oss-120b", GROQ_REASONING_EFFORT: "medium" }));
-    this.geminiBodies.push(buildGeminiRequest(req, { GEMINI_MODEL: "gemini-2.5-flash" }));
+    this.bodies.push(buildOpenAIRequest(req, { OPENAI_MODEL: "gpt-5-mini" }));
+    this.geminiBodies.push(buildGeminiRequest(req, { GEMINI_MODEL: "gemini-3.5-flash-lite" }));
     const s = this.script(req);
     const canSearch = req.toolChoice !== "none";
     const sources = canSearch ? (s.sources ?? []) : [];

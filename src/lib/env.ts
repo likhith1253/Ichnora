@@ -7,13 +7,14 @@ import { z } from "zod";
  * and boots without any API key; chat requests surface a setup error instead.
  */
 const schema = z.object({
-  LLM_PROVIDER: z.enum(["gemini", "groq", "openai"]).default("gemini"),
+  LLM_PROVIDER: z.enum(["gemini", "openai"]).default("gemini"),
   GEMINI_API_KEY: z.string().optional(),
-  // Free tier: Google Search grounding is available on the 2.5 Flash family only.
-  GEMINI_MODEL: z.string().min(1).default("gemini-2.5-flash"),
-  GROQ_API_KEY: z.string().optional(),
-  GROQ_MODEL: z.string().min(1).default("openai/gpt-oss-120b"),
-  GROQ_REASONING_EFFORT: z.enum(["low", "medium", "high"]).default("low"),
+  GEMINI_MODEL: z.string().min(1).default("gemini-3.5-flash-lite"),
+  /** Tried in order when the primary model is overloaded (503) or unavailable (404). */
+  GEMINI_FALLBACK_MODELS: z
+    .string()
+    .default("gemini-3.1-flash-lite")
+    .transform((s) => s.split(",").map((x) => x.trim()).filter(Boolean)),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_MODEL: z.string().min(1).default("gpt-5-mini"),
   MINIMI_DB_PATH: z.string().optional(),
@@ -67,9 +68,7 @@ export function getConfig(env: NodeJS.ProcessEnv = projectEnv()): AppConfig {
     LLM_PROVIDER: clean(env.LLM_PROVIDER)?.toLowerCase(),
     GEMINI_API_KEY: clean(env.GEMINI_API_KEY) ?? clean(env.GOOGLE_API_KEY),
     GEMINI_MODEL: clean(env.GEMINI_MODEL),
-    GROQ_API_KEY: clean(env.GROQ_API_KEY),
-    GROQ_MODEL: clean(env.GROQ_MODEL),
-    GROQ_REASONING_EFFORT: clean(env.GROQ_REASONING_EFFORT),
+    GEMINI_FALLBACK_MODELS: clean(env.GEMINI_FALLBACK_MODELS),
     OPENAI_API_KEY: clean(env.OPENAI_API_KEY),
     OPENAI_MODEL: clean(env.OPENAI_MODEL),
     MINIMI_DB_PATH: clean(env.MINIMI_DB_PATH),
@@ -95,18 +94,10 @@ export function providerStatus(cfg: AppConfig = getConfig()): ProviderStatus {
       missingVar: cfg.GEMINI_API_KEY ? undefined : "GEMINI_API_KEY",
     };
   }
-  if (cfg.LLM_PROVIDER === "openai") {
-    return {
-      provider: "openai",
-      model: cfg.OPENAI_MODEL,
-      configured: Boolean(cfg.OPENAI_API_KEY),
-      missingVar: cfg.OPENAI_API_KEY ? undefined : "OPENAI_API_KEY",
-    };
-  }
   return {
-    provider: "groq",
-    model: cfg.GROQ_MODEL,
-    configured: Boolean(cfg.GROQ_API_KEY),
-    missingVar: cfg.GROQ_API_KEY ? undefined : "GROQ_API_KEY",
+    provider: "openai",
+    model: cfg.OPENAI_MODEL,
+    configured: Boolean(cfg.OPENAI_API_KEY),
+    missingVar: cfg.OPENAI_API_KEY ? undefined : "OPENAI_API_KEY",
   };
 }

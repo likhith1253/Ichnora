@@ -137,8 +137,15 @@ export const MessageItem = memo(function MessageItem({ message, memory }: { mess
           {timeFmt(message.createdAtUtc)}
         </time>
         {!isUser && message.metadata.searched && <span className="tag search">web checked</span>}
+        {!isUser && message.metadata.searchUnavailable && (
+          <span className="tag warn" title="The provider refused web search for this key/tier; the answer is not verified against current sources">
+            web search unavailable
+          </span>
+        )}
         {!isUser && message.metadata.intent === "recall" && <span className="tag mem">from memory</span>}
-        {!isUser && message.metadata.intent === "recall_and_verify" && <span className="tag mem">memory + web re-check</span>}
+        {!isUser && message.metadata.intent === "recall_and_verify" && (
+          <span className="tag mem">{message.metadata.searchUnavailable ? "memory re-check" : "memory + web re-check"}</span>
+        )}
       </header>
       {isUser && memory && <RecallBadge memory={memory} />}
       <div className="msg-body">{isUser ? <p className="plain">{message.content}</p> : <Markdown text={message.content} />}</div>

@@ -77,7 +77,8 @@ function errorMessage(e: unknown): { code: "model" | "timeout"; message: string 
   if (err?.status === 401 || err?.status === 403 || /api[ _-]?key (not valid|invalid)|API_KEY_INVALID/i.test(err?.message ?? ""))
     return { code: "model", message: "The API key was rejected. Check the key in .env.local (it takes priority over system-wide variables) and try again." };
   if (err?.status === 429 || err?.status === 413) return { code: "model", message: "The model provider's rate limit was reached (free tiers allow only a few requests per minute). Wait about a minute and retry." };
-  if (err?.status === 404) return { code: "model", message: "The configured model was not found (404). Check GROQ_MODEL / OPENAI_MODEL." };
+  if (err?.status === 404) return { code: "model", message: "The configured model was not found (404). Check GEMINI_MODEL / OPENAI_MODEL (`npm run models` lists the models your key can use)." };
+  if (err?.status === 503) return { code: "model", message: "The model is overloaded right now (503). Please retry in a moment." };
   if (err?.status && err.status >= 500) return { code: "model", message: `The model provider had an error (${err.status}). Please retry.` };
   return { code: "model", message: "The model request failed. Please retry." };
 }
@@ -166,6 +167,8 @@ export async function* runTurn(deps: AgentDeps, input: TurnInput, signal: AbortS
     let raw: RawSource[] = [];
     let queries: string[] = [];
     let searches = 0;
+    let searchUnavailable = false;
+    let modelUsed = provider.model;
     let firstTokenMs: number | null = null;
     let failure: { code: "model" | "timeout" | "cancelled"; message: string } | null = null;
 
@@ -184,6 +187,8 @@ export async function* runTurn(deps: AgentDeps, input: TurnInput, signal: AbortS
           text = ev.text || text;
           raw = ev.sources;
           queries = ev.searchQueries;
+          searchUnavailable = Boolean(ev.searchUnavailable);
+          if (ev.model) modelUsed = ev.model;
           searches = Math.max(searches, queries.length, raw.length > 0 ? 1 : 0);
         }
       }
@@ -213,6 +218,7 @@ export async function* runTurn(deps: AgentDeps, input: TurnInput, signal: AbortS
       metadata: {
         intent: retrieval.intent,
         searched: searches > 0,
+        ...(searchUnavailable ? { searchUnavailable: true } : {}),
         searchQueries: queries,
         memoryRefs: retrieval.referent ? [retrieval.referent.id] : [],
         recalledMessageIds: [
@@ -222,7 +228,7 @@ export async function* runTurn(deps: AgentDeps, input: TurnInput, signal: AbortS
             ...retrieval.carriedTurns.map((t) => t.user.id),
           ]),
         ].slice(0, 10),
-        model: provider.model,
+        model: modelUsed,
         ...(failure ? { error: failure.message } : {}),
       },
     });
@@ -235,7 +241,7 @@ export async function* runTurn(deps: AgentDeps, input: TurnInput, signal: AbortS
       firstTokenMs,
       totalMs: Math.round(performance.now() - t0),
       memoryMs,
-      model: provider.model,
+      model: modelUsed,
     });
 
     if (failure) {
@@ -258,6 +264,14 @@ export async function* runTurn(deps: AgentDeps, input: TurnInput, signal: AbortS
     }
     if (!items || items.length === 0) items = heuristicExtract(input.text, finalText, searches > 0);
     if (items.length === 0) return;
+    // Without a web check, values are model recollection — never a verified baseline.
+    if (searchUnavailable) {
+      items = items.map((i) => ({
+        ...i,
+        summary: `Unverified (answered without web search): ${i.summary}`.slice(0, 800),
+        facts: i.facts.map((f) => ({ ...f, value: `${f.value} (unverified)`.slice(0, 400), sourceUrl: undefined })),
+      }));
+    }
     // A freshness check creates a NEW dated snapshot; the old baseline stays intact.
     const saved = upsertMemoryItems(
       db,

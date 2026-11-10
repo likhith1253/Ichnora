@@ -158,6 +158,7 @@ a.cite:hover { background: var(--accent); color: var(--paper); }
 .tag { font-size: 11px; padding: 1px 8px; border-radius: 999px; letter-spacing: 0.02em; }
 .tag.search { background: var(--accent-soft); color: var(--accent-ink); }
 .tag.mem { background: var(--amber-soft); color: var(--amber); }
+.tag.warn { background: var(--amber); color: var(--paper); }
 
 .recall { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; color: var(--amber); }
 .recall-icon { font-size: 14px; }

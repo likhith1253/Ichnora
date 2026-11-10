@@ -15,7 +15,8 @@
     "test": "vitest run",
     "eval": "vitest run tests/scenarios.test.ts",
     "check": "npm run typecheck && npm run lint && npm run test && npm run build",
-    "probe": "node scripts/probe.mjs"
+    "probe": "node scripts/probe.mjs",
+    "models": "node scripts/models.mjs"
   },
   "dependencies": {
     "@google/genai": "^3.0.0",

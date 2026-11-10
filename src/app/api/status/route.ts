@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const s = providerStatus(getConfig());
-    return json({ ...s, searchTool: { gemini: "googleSearch", groq: "browser_search", openai: "web_search" }[s.provider] });
+    return json({ ...s, searchTool: { gemini: "googleSearch", openai: "web_search" }[s.provider] });
   } catch (e) {
     return json({ configured: false, error: `Invalid configuration: ${(e as Error).message}` });
   }

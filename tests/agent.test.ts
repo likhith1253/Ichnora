@@ -1,55 +1,39 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { listMessages } from "@/lib/db/repo";
+import { listMemory, listMessages } from "@/lib/db/repo";
 import {
   assertSingleSearchTool,
-  buildGroqRequest,
   buildOpenAIRequest,
-  groqExecutedToolSources,
   openAIOutputSources,
   type LlmProvider,
   type ProviderEvent,
 } from "@/lib/agent/provider";
 import { collectSources, normalizeUrl, rewriteCitationMarkers } from "@/lib/agent/sources";
-import { buildGeminiRequest, groundingSources, insertGroundingCitations } from "@/lib/agent/gemini";
+import { buildGeminiRequest, groundingSources, insertGroundingCitations, isSearchRefused } from "@/lib/agent/gemini";
 import { runTurn } from "@/lib/agent/run";
 import type { ModelRequest } from "@/lib/agent/prompt";
 import { getConfig, parseDotEnv, providerStatus } from "@/lib/env";
 import { chatHandler } from "@/lib/server/chat-handler";
-import { collect, deps, FakeProvider, memDb, turn, TZ } from "./helpers";
+import { collect, deps, FakeProvider, memDb, PG_ANSWER, turn, TZ } from "./helpers";
 
 const REQ: ModelRequest = { system: "s", memoryContext: "<memory_context>x</memory_context>", history: [{ role: "user", content: "a" }], user: "q", toolChoice: "auto" };
 
 describe("request builders (tool surface)", () => {
-  it("Groq: exactly one browser_search tool, memory as a separate system message", () => {
-    const body = buildGroqRequest(REQ, { GROQ_MODEL: "openai/gpt-oss-120b", GROQ_REASONING_EFFORT: "medium" });
-    expect(body.tools).toEqual([{ type: "browser_search" }]);
-    expect(body.tool_choice).toBe("auto");
-    const msgs = body.messages as Array<{ role: string; content: string }>;
-    expect(msgs.map((m) => m.role)).toEqual(["system", "system", "user", "user"]);
-  });
   it("OpenAI Responses: exactly one web_search tool, sources included, store disabled", () => {
     const body = buildOpenAIRequest({ ...REQ, toolChoice: "required" }, { OPENAI_MODEL: "gpt-5-mini" });
     expect(body).toMatchObject({ tools: [{ type: "web_search" }], tool_choice: "required", include: ["web_search_call.action.sources"], store: false });
   });
   it("no tools at all when search is not allowed", () => {
-    expect(buildGroqRequest({ ...REQ, toolChoice: "none" }, { GROQ_MODEL: "m", GROQ_REASONING_EFFORT: "low" }).tools).toBeUndefined();
+    expect(buildOpenAIRequest({ ...REQ, toolChoice: "none" }, { OPENAI_MODEL: "m" }).tools).toBeUndefined();
   });
   it("the invariant rejects any extra or custom tool", () => {
-    expect(() => assertSingleSearchTool([{ type: "browser_search" }, { type: "function" }])).toThrow();
+    expect(() => assertSingleSearchTool([{ type: "web_search" }, { type: "function" }])).toThrow();
     expect(() => assertSingleSearchTool([{ type: "function" }])).toThrow();
     expect(() => assertSingleSearchTool([{ type: "web_search" }])).not.toThrow();
   });
 });
 
 describe("source extraction", () => {
-  it("reads Groq executed_tools search results and queries", () => {
-    const r = groqExecutedToolSources([
-      { type: "browser_search", arguments: '{"query":"neon pricing"}', search_results: { results: [{ title: "Neon pricing", url: "https://neon.com/pricing", content: "..." }] } },
-    ]);
-    expect(r).toEqual({ sources: [{ url: "https://neon.com/pricing", title: "Neon pricing", origin: "search" }], queries: ["neon pricing"] });
-    expect(groqExecutedToolSources("garbage")).toEqual({ sources: [], queries: [] });
-  });
   it("reads OpenAI web_search_call sources and url_citation annotations", () => {
     const r = openAIOutputSources([
       { type: "web_search_call", action: { type: "search", query: "q", sources: [{ type: "url", url: "https://a.com/x" }] } },
@@ -180,8 +164,8 @@ describe("chat route + config", () => {
   });
 
   it("reports missing variable names without values", () => {
-    expect(providerStatus(getConfig({} as NodeJS.ProcessEnv))).toMatchObject({ provider: "gemini", configured: false, missingVar: "GEMINI_API_KEY", model: "gemini-2.5-flash" });
-    expect(providerStatus(getConfig({ LLM_PROVIDER: "groq" } as unknown as NodeJS.ProcessEnv))).toMatchObject({ provider: "groq", missingVar: "GROQ_API_KEY" });
+    expect(providerStatus(getConfig({} as NodeJS.ProcessEnv))).toMatchObject({ provider: "gemini", configured: false, missingVar: "GEMINI_API_KEY", model: "gemini-3.5-flash-lite" });
+    expect(() => getConfig({ LLM_PROVIDER: "groq" } as unknown as NodeJS.ProcessEnv)).toThrow();
     const s = providerStatus(getConfig({ LLM_PROVIDER: "openai", OPENAI_API_KEY: "sk-secret" } as unknown as NodeJS.ProcessEnv));
     expect(s).toMatchObject({ provider: "openai", configured: true });
     expect(JSON.stringify(s)).not.toContain("sk-secret");
@@ -249,5 +233,42 @@ describe("env file parsing", () => {
     };
     const { events } = await turn(memDb(), p, { workspaceId: randomUUID(), text: "price of notion" });
     expect((events.at(-1) as { message: string }).message).toMatch(/API key was rejected/);
+  });
+});
+
+describe("search refusal fallback", () => {
+  it("recognises Google's quota refusal", () => {
+    expect(isSearchRefused(Object.assign(new Error("RESOURCE_EXHAUSTED"), { status: 429 }))).toBe(true);
+    expect(isSearchRefused(Object.assign(new Error("bad request"), { status: 400 }))).toBe(false);
+  });
+  it("records an unverified answer when the provider ran without search", async () => {
+    const db = memDb();
+    const p: LlmProvider = {
+      name: "fake",
+      model: "m",
+      async *stream(): AsyncIterable<ProviderEvent> {
+        yield { type: "done", text: "⚠️ Live web search is unavailable right now. Notion Plus was about $10/month as of my knowledge.", sources: [], searchQueries: [], searchUnavailable: true };
+      },
+      complete: async () => "",
+    };
+    const { events } = await turn(db, p, { workspaceId: randomUUID(), text: "price of notion plus" });
+    const done = events.find((e) => e.type === "done");
+    expect(done && done.type === "done" && done.message.metadata).toMatchObject({ searched: false, searchUnavailable: true });
+  });
+  it("never stores unverified values as a clean baseline", async () => {
+    const db = memDb();
+    const ws = randomUUID();
+    const p: LlmProvider = {
+      name: "fake",
+      model: "m",
+      async *stream(): AsyncIterable<ProviderEvent> {
+        yield { type: "done", text: PG_ANSWER, sources: [], searchQueries: [], searchUnavailable: true };
+      },
+      complete: async () => "",
+    };
+    await turn(db, p, { workspaceId: ws, text: "compare postgres hosts" });
+    const [m] = listMemory(db, ws);
+    expect(m!.summary).toMatch(/^Unverified/);
+    expect(m!.facts.every((f) => f.value.endsWith("(unverified)"))).toBe(true);
   });
 });

@@ -262,7 +262,7 @@ describe("Scenario 8 — tool surface", () => {
       expect(JSON.stringify(body)).not.toMatch(/"type":"function"/);
     }
     expect(p.bodies[0]!.tools).toBeUndefined(); // greeting: no search
-    expect(p.bodies[1]!.tools).toEqual([{ type: "browser_search" }]);
+    expect(p.bodies[1]!.tools).toEqual([{ type: "web_search" }]);
     expect(p.bodies[1]!.tool_choice).toBe("auto");
     // Gemini (default provider): same contract with { googleSearch: {} }.
     for (const g of p.geminiBodies) {

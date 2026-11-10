@@ -25,7 +25,7 @@ if (provider === "gemini") {
   }
   const { GoogleGenAI } = await import("@google/genai");
   const ai = new GoogleGenAI({ apiKey: key });
-  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+  const model = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
   const t0 = Date.now();
   let first = null;
   let text = "";
@@ -54,50 +54,6 @@ if (provider === "gemini") {
   } catch (e) {
     console.log(`[gemini ${model}] FAILED ${e.status ?? ""} ${e.message}`);
     process.exit(1);
-  }
-} else if (provider === "groq") {
-  if (!process.env.GROQ_API_KEY) {
-    console.error("GROQ_API_KEY is not set (.env.local).");
-    process.exit(1);
-  }
-  const model = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
-  const client = new OpenAI({ apiKey: process.env.GROQ_API_KEY, baseURL: "https://api.groq.com/openai/v1" });
-  for (const toolChoice of ["auto", "required"]) {
-    const t0 = Date.now();
-    let first = null;
-    let text = "";
-    const where = new Set();
-    let results = 0;
-    try {
-      const stream = await client.chat.completions.create({
-        model,
-        messages: [{ role: "user", content: question }],
-        tools: [{ type: "browser_search" }],
-        tool_choice: toolChoice,
-        reasoning_effort: "low",
-        stream: true,
-      });
-      for await (const chunk of stream) {
-        const c = chunk.choices?.[0];
-        const d = c?.delta ?? {};
-        for (const [k, v] of [["delta", d.executed_tools], ["x_groq", chunk.x_groq?.executed_tools], ["message", c?.message?.executed_tools]]) {
-          if (v) {
-            where.add(k);
-            for (const t of v) results += t.search_results?.results?.length ?? 0;
-          }
-        }
-        if (d.content) {
-          first ??= Date.now() - t0;
-          text += d.content;
-        }
-      }
-      console.log(`\n[groq ${model}] tool_choice=${toolChoice}: OK in ${Date.now() - t0} ms (first token ${first} ms)`);
-      console.log(`  executed_tools seen in: ${[...where].join(", ") || "none"} · search results: ${results}`);
-      console.log(`  citation markers: ${(text.match(/【[^】]*】/g) || []).length} · markdown links: ${(text.match(/\]\(https?:/g) || []).length}`);
-      console.log(`  answer: ${text.slice(0, 300).replace(/\s+/g, " ")}…`);
-    } catch (e) {
-      console.log(`\n[groq ${model}] tool_choice=${toolChoice}: FAILED ${e.status ?? ""} ${e.message}`);
-    }
   }
 } else {
   if (!process.env.OPENAI_API_KEY) {

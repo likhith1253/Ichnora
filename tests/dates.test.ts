@@ -71,6 +71,12 @@ describe("analyzeQuery", () => {
     expect(a.dateRefs.map((d) => d.start)).toEqual(["2026-11-03"]);
     expect(a.asksRecall && a.asksFreshness).toBe(true);
   });
+  it("'what did I ask today?' is pure recall, not a freshness check", () => {
+    const a = analyzeQuery("What did I ask you today?", NOW, IST);
+    expect(a.asksRecall).toBe(true);
+    expect(a.asksFreshness).toBe(false);
+    expect(a.dateRefs.map((d) => d.start)).toEqual(["2026-11-10"]);
+  });
   it("detects pronoun follow-ups with no distinctive terms", () => {
     const a = analyzeQuery("Has any of them changed pricing or shipped something big since?", NOW, IST);
     expect(a.hasAnaphora).toBe(true);

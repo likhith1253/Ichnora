@@ -23,19 +23,17 @@ Values in `.env.local` take priority over machine-wide environment variables wit
 
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
-| `LLM_PROVIDER` | no | `gemini` | `gemini`, `groq` or `openai` |
+| `LLM_PROVIDER` | no | `gemini` | `gemini` or `openai` |
 | `GEMINI_API_KEY` | yes (gemini) | – | Free Google AI Studio key |
-| `GEMINI_MODEL` | no | `gemini-2.5-flash` | Free tier grounds with Google Search on the 2.5 Flash family |
-| `GROQ_API_KEY` | yes (groq) | – | Only if `LLM_PROVIDER=groq` |
-| `GROQ_MODEL` | no | `openai/gpt-oss-120b` | Must support Groq's `browser_search` tool |
-| `GROQ_REASONING_EFFORT` | no | `low` | Raised to `medium` automatically for change checks |
+| `GEMINI_FALLBACK_MODELS` | no | `gemini-3.1-flash-lite` | Tried in order when the primary model is overloaded or unavailable |
+| `GEMINI_MODEL` | no | `gemini-3.5-flash-lite` | Must support the Google Search tool on your tier (`npm run models` checks) |
 | `OPENAI_API_KEY` | yes (openai) | – | Only if `LLM_PROVIDER=openai` |
 | `OPENAI_MODEL` | no | `gpt-5-mini` | Responses API model with `web_search` |
 | `MEMORY_DISTILL` | no | `heuristic` | `model` adds one small LLM call per research turn |
 | `MINIMI_DB_PATH` | no | `./data/minimi.db` | SQLite file (git-ignored) |
 | `AGENT_TIMEOUT_MS` | no | `120000` | Per-turn timeout |
 
-`npm run probe` sends one live request to verify the search tool works with your key (prints shapes and timings, never the key).
+`npm run probe` sends one live search request with your key; `npm run models` lists the Gemini models your key can use and whether Google Search grounding is enabled for each (neither prints the key).
 
 ## Scripts
 
@@ -56,7 +54,7 @@ src/
   app/api/conversations   list / create / rename / delete
   app/api/memory          read-only memory inspector feed (UI only, not a model tool)
   lib/agent/run.ts        turn orchestration, persistence, idempotency, cancellation
-  lib/agent/provider.ts   provider interface, Groq + OpenAI adapters, single-search-tool invariant
+  lib/agent/provider.ts   provider interface, OpenAI adapter, single-search-tool invariant
   lib/agent/gemini.ts     Gemini adapter: googleSearch grounding, citation insertion
   lib/agent/prompt.ts     system rules, intent directives, untrusted memory block
   lib/agent/sources.ts    source dedupe/provenance, citation-marker rewriting
@@ -78,5 +76,5 @@ tests/                    scenarios + unit tests with a scripted fake model
 - Free tiers are rate-limited (requests per minute/day); the UI shows a clear retry message when a limit is hit.
 - Gemini cannot be *forced* to search; for "has it changed?" turns the app instructs it to, and the answer is labelled when no web check happened.
 - Gemini grounding links are Google redirect URLs; the publisher domain is shown alongside each source.
-- `gemini-2.5-flash` is scheduled by Google to be retired on 1 December 2026; set `GEMINI_MODEL` to a successor that supports Google Search on your tier.
+- **Free Gemini keys cannot use Google Search** (verified 10 Nov 2026: every model available to a new free key returns 429 when the Search tool is attached; `gemini-3.6/3.7/3.8-flash` were also 503-overloaded, Gemini 2.5 is closed to new users). The default `gemini-3.5-flash-lite` (fallback `gemini-3.1-flash-lite`) works for chat and memory. The app then answers without search and labels the reply **web search unavailable**; enable billing on the key (or use `LLM_PROVIDER=openai`) for verified, cited answers.
 - Single-user, single-process; the workspace id lives in the browser's localStorage.

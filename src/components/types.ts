@@ -17,7 +17,7 @@ export interface Message {
   createdAtUtc: string;
   timezone: string;
   localDate: string;
-  metadata: { intent?: string; searched?: boolean; searchQueries?: string[]; error?: string; model?: string };
+  metadata: { intent?: string; searched?: boolean; searchUnavailable?: boolean; searchQueries?: string[]; error?: string; model?: string };
   sources: Source[];
 }
 

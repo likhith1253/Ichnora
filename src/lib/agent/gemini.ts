@@ -1,4 +1,4 @@
-import { GoogleGenAI, type Content, type GenerateContentConfig, type GroundingChunk, type GroundingSupport } from "@google/genai";
+import { GoogleGenAI, type Content, type GenerateContentResponse, type GenerateContentConfig, type GroundingChunk, type GroundingSupport } from "@google/genai";
 import type { AppConfig } from "../env";
 import type { ModelRequest } from "./prompt";
 import { assertSingleSearchTool, type LlmProvider, type ProviderEvent } from "./provider";
@@ -20,6 +20,25 @@ import type { RawSource } from "./sources";
 const GEMINI_NOTES = `## Provider notes
 - Your search tool is Google Search. Citations are attached automatically from your search results — do NOT write URLs or Markdown links yourself, and never invent sources.
 - Keep each factual claim in its own sentence so its citation attaches precisely.`;
+
+const NO_SEARCH_NOTE = `## Web search unavailable for this turn
+The search tool was refused by the provider (quota/tier). You have NO current web access.
+- Start with one short line: "⚠️ Live web search is unavailable right now, so this is not verified against current sources."
+- Answer from the memory context and general knowledge only; mark anything time-sensitive as unverified and give its knowledge date if known.
+- For change checks, restate the saved baseline and mark every item ❓ Cannot verify. Never claim something changed or stayed the same.`;
+
+export function isSearchRefused(e: unknown): boolean {
+  const err = e as { status?: number; message?: string };
+  return err?.status === 429 || /RESOURCE_EXHAUSTED|exceeded your current quota/i.test(err?.message ?? "");
+}
+
+/** Overloaded (503), unavailable to this key (404), or removed model. */
+export function isUnavailable(e: unknown): boolean {
+  const err = e as { status?: number; message?: string };
+  return err?.status === 503 || err?.status === 404 || /UNAVAILABLE|high demand|no longer available|not found/i.test(err?.message ?? "");
+}
+
+const searchRefusedUntil = new Map<string, number>();
 
 export interface GeminiRequest {
   model: string;
@@ -119,15 +138,52 @@ export class GeminiProvider implements LlmProvider {
   readonly name = "gemini" as const;
   readonly model: string;
   private ai: GoogleGenAI;
+  private models: string[];
   constructor(private cfg: AppConfig) {
     this.model = cfg.GEMINI_MODEL;
-    this.ai = new GoogleGenAI({ apiKey: cfg.GEMINI_API_KEY });
+    this.models = [...new Set([cfg.GEMINI_MODEL, ...cfg.GEMINI_FALLBACK_MODELS])];
+    // Few SDK-level retries: we fail over to another model instead of waiting.
+    this.ai = new GoogleGenAI({ apiKey: cfg.GEMINI_API_KEY, httpOptions: { retryOptions: { attempts: 2 } } });
+  }
+
+  /**
+   * Open a stream, failing over across configured models when one is
+   * overloaded/unavailable (503/404), and dropping the search tool when the
+   * key's tier refuses it (429) — remembered for a while to avoid wasted calls.
+   */
+  private async open(req: ModelRequest, signal: AbortSignal) {
+    let lastError: unknown;
+    for (const model of this.models) {
+      const searchBlocked = searchRefusedUntil.get(model) ?? 0;
+      let useSearch = req.toolChoice !== "none" && Date.now() > searchBlocked;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const r = useSearch ? req : { ...req, toolChoice: "none" as const, system: req.toolChoice === "none" ? req.system : `${req.system}\n\n${NO_SEARCH_NOTE}` };
+        const body = buildGeminiRequest(r, { GEMINI_MODEL: model });
+        try {
+          const stream = await this.ai.models.generateContentStream({ ...body, config: { ...body.config, abortSignal: signal } });
+          return { stream, model, searchUnavailable: req.toolChoice !== "none" && !useSearch };
+        } catch (e) {
+          lastError = e;
+          if (signal.aborted) throw e;
+          if (useSearch && isSearchRefused(e)) {
+            searchRefusedUntil.set(model, Date.now() + 10 * 60_000);
+            useSearch = false;
+            continue; // same model, without search
+          }
+          if (isUnavailable(e)) break; // next model
+          throw e;
+        }
+      }
+    }
+    throw lastError;
   }
 
   async *stream(req: ModelRequest, signal: AbortSignal): AsyncIterable<ProviderEvent> {
-    const body = buildGeminiRequest(req, this.cfg);
     yield { type: "phase", phase: req.toolChoice === "none" ? "thinking" : "searching" };
-    const stream = await this.ai.models.generateContentStream({ ...body, config: { ...body.config, abortSignal: signal } });
+    const opened = await this.open(req, signal);
+    const { searchUnavailable } = opened;
+    if (searchUnavailable) yield { type: "phase", phase: "thinking" };
+    const stream: AsyncGenerator<GenerateContentResponse> = opened.stream;
     let text = "";
     let writing = false;
     let chunks: GroundingChunk[] | undefined;
@@ -152,7 +208,7 @@ export class GeminiProvider implements LlmProvider {
     }
     for (const q of queries) yield { type: "search", query: q };
     const sources = groundingSources(chunks);
-    yield { type: "done", text: insertGroundingCitations(text, supports, sources), sources, searchQueries: queries };
+    yield { type: "done", text: insertGroundingCitations(text, supports, sources), sources, searchQueries: queries, searchUnavailable, model: opened.model };
   }
 
   async complete(system: string, user: string, signal: AbortSignal): Promise<string> {

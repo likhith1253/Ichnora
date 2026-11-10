@@ -57,6 +57,9 @@ export function analyzeQuery(text: string, now: Date, timeZone: string): QueryAn
   // recall target. Keep a today-reference only for "what did I ask today?".
   const hasPast = allRefs.some((r) => r.end < today);
   const dateRefs = allRefs.filter((r) => r.end < today || (asksRecall && !hasPast));
+  // A date being *recalled* ("what did I ask today?") is not a freshness cue.
+  let withoutRecallDates = text;
+  for (const r of dateRefs) withoutRecallDates = withoutRecallDates.replace(r.phrase, " ");
   const strong: string[] = [];
   const weak: string[] = [];
   for (const t of tokenize(text)) {
@@ -70,7 +73,7 @@ export function analyzeQuery(text: string, now: Date, timeZone: string): QueryAn
   return {
     dateRefs,
     asksRecall,
-    asksFreshness: FRESHNESS_RE.test(text),
+    asksFreshness: FRESHNESS_RE.test(withoutRecallDates),
     hasAnaphora: ANAPHORA_RE.test(text),
     refersToPast: PAST_RE.test(text) || hasPast,
     isGreeting: GREETING_RE.test(text),
