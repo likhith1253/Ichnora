@@ -170,3 +170,18 @@ The one deviation (unsanitised search egress) was corrected in place and covered
 by tests. Existing functionality is preserved and all checks pass. Work
 continues on the original authentication + Try Demo requirements; no rewrite, no
 re-clone, no history changes.
+
+---
+
+## 8. Browser QA, Security Hardening & Edge-Case Audit
+
+An autonomous real-browser QA audit was executed across desktop and mobile viewports with an isolated QA database (`data/qa_browser.db` on port 3010).
+
+### Browser Audit Summary
+- **Hydration & Rendering:** 0 hydration errors, 0 React console warnings/errors across all views (Chat, Loops, Memory, Settings, Sign-in).
+- **Responsive Layout:** Tested at 1440x900, 1024x768, 768x1024 (tablet), 375x667 (mobile), and 320x700 (narrow mobile). No horizontal overflow (`scrollWidth <= clientWidth` on `<html>` and `<body>`).
+- **Demo Lifecycle:** Seamless entry via "Try Demo", banner with turn and credit counters, pre-seeded CRM comparison and temporal facts, 5 guided prompts, answer cache verification, and clean reset.
+- **Defects Fixed:**
+  1. *Missing Favicon (HTTP 404):* Added standard multi-resolution `public/favicon.ico` and SVG route `src/app/icon.svg`.
+  2. *Open Redirect Hardening:* Hardened `nextPath()` in [SignIn.tsx](file:///d:/minimi/src/components/SignIn.tsx) to reject `\` (backslash navigation trick), `\r`, and `\n` in addition to `//`.
+- **Automated Verification:** 14 route-level security/privacy integration tests in [qa-audit.test.ts](file:///d:/minimi/tests/qa-audit.test.ts) covering IDOR isolation, Zod validation, cascade deletes, OAuth fallback safety, search query sanitization, and log redaction. All 231 tests pass clean.
