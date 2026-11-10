@@ -115,6 +115,27 @@ export function rewriteCitationMarkers(text: string, resultUrls: string[]): stri
  * into Markdown links so they render and count as citations. URLs the search
  * did not return are left untouched (and later flagged as unverified links).
  */
+/**
+ * Remove links whose target is not an allowed (previously validated) source:
+ * the anchor text stays, the URL goes. Unsupported links are never presented
+ * as evidence. Code blocks are left untouched.
+ */
+export function stripUnknownLinks(text: string, allowedUrls: Iterable<string>): { text: string; removed: number } {
+  const allowed = new Set([...allowedUrls].map((u) => normalizeUrl(u)).filter(Boolean));
+  let removed = 0;
+  const parts = text.split(/(```[\s\S]*?```)/g);
+  const out = parts.map((part) =>
+    part.startsWith("```")
+      ? part
+      : part.replace(/\[([^\]]{1,200})\]\((https?:\/\/[^\s)]+)\)/g, (m, label: string, url: string) => {
+          if (allowed.has(normalizeUrl(url))) return m;
+          removed++;
+          return label;
+        }),
+  );
+  return { text: out.join(""), removed };
+}
+
 export function linkifyKnownUrls(text: string, resultUrls: string[]): string {
   const known = new Map(resultUrls.map((u) => [normalizeUrl(u), u] as const));
   return text.replace(/(\]\()?(\(?)(https?:\/\/[^\s)<>\]|]+)(\)?)/g, (m, mdOpen: string | undefined, open: string, url: string, close: string) => {

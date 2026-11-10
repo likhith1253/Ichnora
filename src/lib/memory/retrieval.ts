@@ -145,6 +145,8 @@ export function retrieve(db: DB, input: RetrieveInput): Retrieval {
       return { ref, turns: turns.slice(0, 8) };
     });
 
+  const anyDateHitEarly = dateHits.some((h) => h.turns.length > 0);
+
   // 1b. Carry-over: turns the previous reply in this thread recalled, so
   // "is your answer still correct?" right after a recall keeps its baseline.
   const lastAssistant = [...thread].reverse().find((m) => m.role === "assistant");
@@ -175,13 +177,22 @@ export function retrieve(db: DB, input: RetrieveInput): Retrieval {
   let ambiguous: MemoryItem[] = [];
   if (needsReferent && scored.length > 0) {
     const [top, second] = scored;
+    // Two snapshots of the SAME shortlist (same entities) are not rival
+    // interpretations; and an explicit date that matched turns already anchors
+    // the question. Only genuinely different topics trigger a clarifying question.
+    const sameTopic = (x: MemoryItem, y: MemoryItem) => {
+      const ex = new Set(x.entities.map((e) => e.toLowerCase()));
+      const shared = y.entities.filter((e) => ex.has(e.toLowerCase())).length;
+      return shared > 0 && shared / Math.min(ex.size || 1, y.entities.length || 1) >= 0.5;
+    };
+    const rivals = scored.filter((s) => top!.score - s.score < 1.0 && !sameTopic(top!.item, s.item));
     const tied =
       !top!.anchored &&
+      !anyDateHitEarly &&
       second !== undefined &&
-      second.item.conversationId !== top!.item.conversationId &&
-      HIGH_VALUE.has(second.item.type) &&
-      top!.score - second.score < 1.0;
-    if (tied && a.hasAnaphora) ambiguous = scored.slice(0, 3).filter((s) => top!.score - s.score < 1.0).map((s) => s.item);
+      rivals.length > 0 &&
+      rivals.some((s) => s.item.conversationId !== top!.item.conversationId && HIGH_VALUE.has(s.item.type));
+    if (tied && a.hasAnaphora) ambiguous = [top!.item, ...rivals.map((s) => s.item)].slice(0, 3);
     else if (top!.anchored || top!.score >= 2.5) referent = top!.item;
   }
   const referentTurns = referent ? toTurns(db, getMessages(db, referent.sourceMessageIds)) : [];

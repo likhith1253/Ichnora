@@ -28,7 +28,7 @@ const NO_SEARCH_NOTE = `## Web search unavailable for this turn
 Live search is not available (not configured, or its free quota is used up). You have NO current web access.
 - Start with one short line: "⚠️ Live web search is unavailable right now, so this is not verified against current sources."
 - Answer from the memory context and general knowledge only; mark anything time-sensitive as unverified.
-- For change checks, restate the saved baseline and mark every item ❓ Cannot verify. Never claim something changed or stayed the same.`;
+- For change checks, restate the saved baseline and mark every item ❓ UNABLE TO VERIFY. Never claim something changed or stayed the same.`;
 
 const TOOL_NOTES = `## Using web_search
 - Batch: put every query you need into ONE call (up to 5), e.g. one per product. Use include_domains for official sites when known and topic "news" for recent announcements.

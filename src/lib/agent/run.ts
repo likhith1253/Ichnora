@@ -21,7 +21,7 @@ import { ingestUserMessage, type IngestResult } from "../personal/store";
 import { redact } from "../server/log";
 import { buildModelRequest } from "./prompt";
 import type { LlmProvider } from "./provider";
-import { collectSources, type RawSource } from "./sources";
+import { collectSources, stripUnknownLinks, type RawSource } from "./sources";
 import type { Extraction } from "../search/types";
 import { mapClaims } from "../research/claims";
 import { compareObservations, extractObservations } from "../research/observations";
@@ -248,7 +248,18 @@ export async function* runTurn(deps: AgentDeps, input: TurnInput, signal: AbortS
 
     if (!failure && !text.trim()) failure = { code: "model", message: "The model returned an empty answer. Please retry." };
 
-    const finalText = text.trim();
+    // Citation policy: a link survives only if its URL was returned by this
+    // turn's search or is a previously validated source present in memory.
+    const allowedUrls = [
+      ...raw.map((s) => s.url),
+      ...[...retrieval.dateHits.flatMap((h) => h.turns), ...retrieval.referentTurns, ...retrieval.carriedTurns, ...retrieval.relatedTurns].flatMap((t) =>
+        (t.assistant?.sources ?? []).filter((s) => s.origin !== "answer_link").map((s) => s.url),
+      ),
+      ...[retrieval.referent, ...retrieval.memory].flatMap((m) => (m?.facts ?? []).map((f) => f.sourceUrl).filter((u): u is string => !!u)),
+    ];
+    const stripped = stripUnknownLinks(text.trim(), allowedUrls);
+    if (stripped.removed) console.info(`[citations] removed ${stripped.removed} link(s) to URLs not returned by search`);
+    const finalText = stripped.text;
     const createdAt = now();
     const status = failure ? (failure.code === "cancelled" ? "cancelled" : "error") : "complete";
 

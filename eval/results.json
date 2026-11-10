@@ -1,0 +1,54 @@
+{
+  "generatedAt": "2026-11-10T17:14:01.695Z",
+  "results": {
+    "A. Statement classification": {
+      "cases": 30,
+      "commitment_precision": 1,
+      "commitment_recall": 1,
+      "type_accuracy": 1,
+      "due_date_accuracy": 1,
+      "invented_due_dates": 0,
+      "counterparty_accuracy": 1
+    },
+    "B. Commitment lifecycle": {
+      "cases": 7,
+      "lifecycle_accuracy": 1,
+      "premature_completions": 0
+    },
+    "C. Routing": {
+      "cases": 20,
+      "intent_accuracy": 1,
+      "unnecessary_search_rate": 0,
+      "missed_required_search_rate": 0
+    },
+    "D. Temporal resolution": {
+      "cases": 14,
+      "temporal_accuracy": 1
+    },
+    "E. Official-source labelling": {
+      "cases": 16,
+      "official_precision": 1,
+      "official_recall": 1
+    },
+    "F. Citation validity": {
+      "cases": 6,
+      "case_accuracy": 1,
+      "rendered_link_validity": 1,
+      "unsupported_sources_shown_as_evidence": 0
+    },
+    "G. Change detection": {
+      "cases": 10,
+      "change_detection_accuracy": 1,
+      "false_no_change": 0
+    }
+  },
+  "failures": {
+    "A. Statement classification": [],
+    "B. Commitment lifecycle": [],
+    "C. Routing": [],
+    "D. Temporal resolution": [],
+    "E. Official-source labelling": [],
+    "F. Citation validity": [],
+    "G. Change detection": []
+  }
+}

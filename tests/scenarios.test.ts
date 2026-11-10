@@ -50,8 +50,8 @@ describe("Scenario 1 — Monday CRM shortlist → has any of them changed?", () 
     expect(ctx).toContain("https://www.hubspot.com/pricing/sales"); // old source retained
     expect(p.lastBody.tool_choice).toBe("required");
     assertSingleSearchTool(p.lastBody.tools as Array<{ type: string }>);
-    expect(p.last.system).toMatch(/Cannot verify/);
-    expect(p.last.system).toMatch(/No change found in checked sources/);
+    expect(p.last.system).toMatch(/UNABLE TO VERIFY/);
+    expect(p.last.system).toMatch(/NO MATERIAL CHANGE FOUND/);
     expect(p.last.system).toContain("10 November 2026");
   });
 

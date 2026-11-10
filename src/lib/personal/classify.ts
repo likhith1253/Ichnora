@@ -398,7 +398,8 @@ export function classifyMessage(text: string, now: Date, timeZone: string): Clas
       s.match(/\b(?:we are|we're)\s+(?:a|an)\s+(.{3,120})$/i);
     if (fact && !HEDGES.test(s)) {
       const key = fact.length > 2 && fact[2] ? fact[1]!.toLowerCase() : /work/i.test(fact[0]) ? "work" : /we/i.test(fact[0]) ? "team" : "identity";
-      const isProject = /\b(project|product|startup)\b/i.test(fact[0]);
+      // "my project/product is …" describes a project; "I work at a startup" is a personal fact.
+      const isProject = /\b(?:my|our)\s+(?:project|product|startup)\b/i.test(fact[0]);
       candidates.push({
         ...base,
         type: isProject ? "PROJECT" : "FACT",
