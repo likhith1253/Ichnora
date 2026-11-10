@@ -14,7 +14,7 @@ import { collectSources, normalizeUrl, rewriteCitationMarkers } from "@/lib/agen
 import { buildGeminiRequest, groundingSources, insertGroundingCitations } from "@/lib/agent/gemini";
 import { runTurn } from "@/lib/agent/run";
 import type { ModelRequest } from "@/lib/agent/prompt";
-import { getConfig, providerStatus } from "@/lib/env";
+import { getConfig, parseDotEnv, providerStatus } from "@/lib/env";
 import { chatHandler } from "@/lib/server/chat-handler";
 import { collect, deps, FakeProvider, memDb, turn, TZ } from "./helpers";
 
@@ -148,7 +148,7 @@ describe("turn reliability", () => {
     };
     const { events } = await turn(db, p, { workspaceId: randomUUID(), text: "price of notion" });
     expect(events.at(-1)).toMatchObject({ type: "error", code: "model" });
-    expect((events.at(-1) as { message: string }).message).toMatch(/401/);
+    expect((events.at(-1) as { message: string }).message).toMatch(/API key was rejected/);
   });
 });
 
@@ -230,5 +230,24 @@ describe("Gemini adapter", () => {
     );
     const stored = collectSources(sources, out, "2026-11-10T00:00:00Z");
     expect(stored.map((s) => [s.domain, s.origin])).toEqual([["neon.com", "citation"], ["supabase.com", "citation"]]);
+  });
+});
+
+describe("env file parsing", () => {
+  it("parses .env syntax", () => {
+    expect(parseDotEnv('# c\r\nGEMINI_API_KEY="abc"\r\nexport X=1 # note\nEMPTY=\nbad line')).toEqual({ GEMINI_API_KEY: "abc", X: "1", EMPTY: "" });
+  });
+  it("maps invalid-key errors to a clear message", async () => {
+    const p: LlmProvider = {
+      name: "fake",
+      model: "m",
+      // eslint-disable-next-line require-yield
+      async *stream(): AsyncIterable<ProviderEvent> {
+        throw Object.assign(new Error('{"error":{"message":"API key not valid. Please pass a valid API key."}}'), { status: 400 });
+      },
+      complete: async () => "",
+    };
+    const { events } = await turn(memDb(), p, { workspaceId: randomUUID(), text: "price of notion" });
+    expect((events.at(-1) as { message: string }).message).toMatch(/API key was rejected/);
   });
 });

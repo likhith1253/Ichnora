@@ -8,7 +8,8 @@ for (const f of [".env.local", ".env"]) {
   if (!fs.existsSync(f)) continue;
   for (const line of fs.readFileSync(f, "utf8").split(/\r?\n/)) {
     const m = line.match(/^\s*([A-Z_]+)\s*=\s*(.*)\s*$/);
-    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
+    // Project file wins over (possibly stale) machine-wide variables, as in the app.
+    if (m && m[2].trim()) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
   }
 }
 
@@ -17,6 +18,7 @@ const question = process.argv.slice(2).join(" ") || "What is the current Node.js
 
 if (provider === "gemini") {
   const key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  delete process.env.GOOGLE_API_KEY; // the key is passed explicitly; avoid SDK env warnings
   if (!key) {
     console.error("GEMINI_API_KEY is not set (.env.local).");
     process.exit(1);

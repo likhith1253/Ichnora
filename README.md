@@ -17,6 +17,8 @@ npm run dev
 
 Open http://localhost:3000. The app boots without a key; chatting then shows which variable to set.
 
+Values in `.env.local` take priority over machine-wide environment variables with the same name (so an old system `GEMINI_API_KEY` cannot shadow the project key), and are re-read on each request — no restart needed after adding a key.
+
 ## Environment variables
 
 | Variable | Required | Default | Purpose |

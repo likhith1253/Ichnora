@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { z } from "zod";
 
 /**
@@ -27,7 +29,40 @@ function clean(v: string | undefined): string | undefined {
   return t ? t : undefined;
 }
 
-export function getConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
+/** Minimal KEY=VALUE parser for .env files (comments, quotes, CRLF). */
+export function parseDotEnv(text: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const line of text.split(/\r?\n/)) {
+    const m = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
+    if (!m) continue;
+    let v = m[2]!;
+    if (/^(["']).*\1$/.test(v)) v = v.slice(1, -1);
+    else v = v.replace(/\s+#.*$/, "");
+    out[m[1]!] = v;
+  }
+  return out;
+}
+
+/**
+ * Next.js never lets .env files override variables already set on the machine,
+ * so a stale system-wide GEMINI_API_KEY would silently shadow the project's key.
+ * For this app's own settings, non-empty values in the project's .env.local
+ * (then .env) take precedence over the process environment.
+ */
+function projectEnv(): NodeJS.ProcessEnv {
+  const merged: Record<string, string | undefined> = { ...process.env };
+  for (const file of [".env", ".env.local"]) {
+    try {
+      const vars = parseDotEnv(fs.readFileSync(path.join(process.cwd(), file), "utf8"));
+      for (const [k, v] of Object.entries(vars)) if (v.trim()) merged[k] = v;
+    } catch {
+      /* file absent */
+    }
+  }
+  return merged as NodeJS.ProcessEnv;
+}
+
+export function getConfig(env: NodeJS.ProcessEnv = projectEnv()): AppConfig {
   return schema.parse({
     LLM_PROVIDER: clean(env.LLM_PROVIDER)?.toLowerCase(),
     GEMINI_API_KEY: clean(env.GEMINI_API_KEY) ?? clean(env.GOOGLE_API_KEY),
