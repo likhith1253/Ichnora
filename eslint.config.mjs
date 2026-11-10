@@ -3,7 +3,7 @@ import tseslint from "typescript-eslint";
 import reactHooks from "eslint-plugin-react-hooks";
 
 export default tseslint.config(
-  { ignores: [".next/**", "node_modules/**", "data/**", ".claude/**", "next-env.d.ts"] },
+  { ignores: [".next/**", "node_modules/**", "data/**", ".claude/**", "next-env.d.ts", "scripts/qa/**"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   { files: ["scripts/**"], languageOptions: { globals: { process: "readonly", console: "readonly", fetch: "readonly" } } },

@@ -14,3 +14,5 @@ next-env.d.ts
 npm-debug.log*
 .vercel
 .claude/
+.qa_screenshots/
+qa_browser_report.json
