@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, getWorkspaceId, newId, recallActive, rememberActive, streamChat, userTimeZone } from "./api";
+import { api, getWorkspaceId, identity, newId, recallActive, rememberActive, streamChat, userTimeZone, type DemoInfo, type Me } from "./api";
 import { ChatView, type ChatError, type Notice, type Pending } from "./ChatView";
+import { DemoBar } from "./DemoBar";
 import { dayLabel } from "./format";
 import { LoopsView } from "./LoopsView";
 import { MemoryView } from "./MemoryView";
@@ -63,6 +64,9 @@ export default function ChatApp() {
   const [notices, setNotices] = useState<Notice[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
   const [railOpen, setRailOpen] = useState(false);
+  const [me, setMe] = useState<Me | null>(null);
+  const [demo, setDemo] = useState<DemoInfo | null>(null);
+  const [claimOpen, setClaimOpen] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const tabRefs = useRef<Record<View, HTMLButtonElement | null>>({ chat: null, loops: null, memory: null });
@@ -81,22 +85,42 @@ export default function ChatApp() {
     setLoadingThread(false);
   }, []);
 
-  // Boot: workspace id from localStorage, then conversations and status.
+  // Boot: identity first, then conversations and status.
   useEffect(() => {
     if (!ws) return;
     const id = ws;
+    let cancelled = false;
     api.status().then(setStatus).catch(() => setStatus({ configured: false, error: "Server unreachable" }));
-    api
-      .conversations(id)
-      .catch(() => ({ conversations: [] as Conversation[] }))
-      .then(({ conversations: list }) => {
-        setConversations(list);
-        const remembered = recallActive();
-        const pick = list.find((c) => c.id === remembered)?.id ?? list[0]?.id ?? null;
-        setActiveId(pick);
-        if (pick) loadConversation(id, pick);
-      });
-  }, [ws, loadConversation]);
+    (async () => {
+      let m: Me;
+      try {
+        m = await identity.me();
+      } catch {
+        m = { mode: "local", signedIn: false, user: null, demo: false, providers: [], demoEnabled: false };
+      }
+      if (cancelled) return;
+      setMe(m);
+      // AUTH mode without a session (and no demo): the sign-in screen owns the app.
+      if (m.mode === "auth" && !m.signedIn && !m.demo) {
+        window.location.replace("/signin?next=%2F");
+        return;
+      }
+      if (m.demo) identity.demoInfo().then((d) => !cancelled && setDemo(d)).catch(() => null);
+      const list = await refreshConversations(id);
+      if (cancelled) return;
+      const remembered = recallActive();
+      const pick = list.find((c) => c.id === remembered)?.id ?? list[0]?.id ?? null;
+      setActiveId(pick);
+      if (pick) loadConversation(id, pick);
+      // After a first sign-in, offer to bring the browser's existing data over.
+      if (m.signedIn && new URLSearchParams(window.location.search).get("welcome") === "1" && localStorage.getItem("minimi.workspace")) {
+        setClaimOpen(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [ws, loadConversation, refreshConversations]);
 
   useEffect(() => rememberActive(activeId), [activeId]);
 
@@ -233,6 +257,46 @@ export default function ChatApp() {
     setView("chat");
   };
 
+  const signOut = async () => {
+    await identity.signOut().catch(() => null);
+    window.location.assign("/signin");
+  };
+
+  const deleteAccount = async () => {
+    await identity.deleteAccount();
+    window.location.assign("/signin");
+  };
+
+  const resetDemo = async () => {
+    if (!ws) return;
+    try {
+      await identity.resetDemo();
+      setConversations([]);
+      setActiveId(null);
+      setMessages([]);
+      setMemoryByUser({});
+      setNotices([]);
+      setError(null);
+      setRefreshKey((n) => n + 1);
+      identity.demoInfo().then(setDemo).catch(() => null);
+      const list = await refreshConversations(ws);
+      const pick = list[0]?.id ?? null;
+      setActiveId(pick);
+      if (pick) loadConversation(ws, pick);
+    } catch (e) {
+      setError({ message: (e as Error).message });
+    }
+  };
+
+  const claim = async () => {
+    const localId = typeof window === "undefined" ? null : localStorage.getItem("minimi.workspace");
+    setClaimOpen(false);
+    if (!localId || !ws) return;
+    await identity.claim(localId).catch(() => null);
+    await refreshConversations(ws);
+    setRefreshKey((n) => n + 1);
+  };
+
   const onTabKey = (e: React.KeyboardEvent, idx: number) => {
     let next = idx;
     if (e.key === "ArrowRight") next = (idx + 1) % VIEWS.length;
@@ -259,14 +323,36 @@ export default function ChatApp() {
         activeId={activeId}
         busy={!!pending}
         status={status}
+        me={me}
         onNew={newConversation}
         onSelect={selectConversation}
         onRename={rename}
         onDelete={removeConversation}
         onClose={() => setRailOpen(false)}
+        onSignOut={me?.signedIn ? signOut : undefined}
       />
 
       <div className="main">
+        {me?.demo && demo && (
+          <DemoBar
+            demo={demo}
+            signInHref={me.providers.length ? identity.providerHref(me.providers[0]!, "/") : null}
+            onReset={resetDemo}
+          />
+        )}
+        {claimOpen && (
+          <div className="claim-bar" role="status">
+            <p>You already have conversations in this browser. Bring them into your account?</p>
+            <div className="claim-actions">
+              <button type="button" className="btn small" onClick={claim}>
+                Bring them over
+              </button>
+              <button type="button" className="btn ghost small" onClick={() => setClaimOpen(false)}>
+                Not now
+              </button>
+            </div>
+          </div>
+        )}
         <header className="topbar">
           <button type="button" className="icon-btn menu" onClick={() => setRailOpen(true)} aria-label="Open conversations">
             <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
@@ -294,7 +380,14 @@ export default function ChatApp() {
               </button>
             ))}
           </div>
-          <SettingsMenu ws={ws} onForgotten={onForgotten} />
+          <SettingsMenu
+            ws={ws}
+            me={me}
+            onForgotten={onForgotten}
+            onSignOut={me?.signedIn ? signOut : undefined}
+            onDeleteAccount={me?.signedIn ? deleteAccount : undefined}
+            onTryDemo={!me?.signedIn && !me?.demo && me?.demoEnabled ? async () => { try { await identity.startDemo(); window.location.assign("/"); } catch (e) { setError({ message: (e as Error).message }); } } : undefined}
+          />
         </header>
 
         <main id="main" className="stage" role="tabpanel" aria-labelledby={`tab-${view}`} tabIndex={-1}>
@@ -315,6 +408,7 @@ export default function ChatApp() {
               onStop={stop}
               onDismissNotice={(id) => setNotices((ns) => ns.filter((n) => n.id !== id))}
               onOpenLoops={() => setView("loops")}
+              demoPrompts={demo?.prompts}
             />
           )}
           {view === "loops" && ws && <LoopsView ws={ws} refreshKey={refreshKey} onOpenConversation={selectConversation} />}

@@ -76,6 +76,72 @@ export const api = {
   forgetEverything: (ws: string) => call(ws, "/api/workspace", { method: "DELETE" }),
 };
 
+/* ------------------------------------------------------- identity & demo */
+
+export interface MeUser {
+  id: string;
+  name: string | null;
+  email: string | null;
+  avatarUrl: string | null;
+  createdAt?: string;
+}
+
+export interface Me {
+  mode: "local" | "auth";
+  signedIn: boolean;
+  user: MeUser | null;
+  demo: boolean;
+  providers: string[];
+  demoEnabled: boolean;
+}
+
+export interface DemoPrompt {
+  id: string;
+  label: string;
+  hint: string;
+  text: string;
+}
+
+export interface DemoBudget {
+  turnsUsed: number;
+  turnsMax: number;
+  creditsUsed: number;
+  creditsMax: number;
+  turnsRemaining: number;
+  creditsRemaining: number;
+  exhausted: boolean;
+}
+
+export interface DemoInfo {
+  enabled: boolean;
+  prompts: DemoPrompt[];
+  budget?: DemoBudget;
+  expiresAt?: string | null;
+}
+
+/** POST/DELETE helper that surfaces the server's error message. */
+async function mutate<T>(path: string, init: RequestInit): Promise<T> {
+  const res = await fetch(path, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
+  });
+  const body = (await res.json().catch(() => ({}))) as { error?: string };
+  if (!res.ok) throw new Error(body.error ?? `Request failed (${res.status})`);
+  return body as T;
+}
+
+export const identity = {
+  me: (): Promise<Me> => fetch("/api/auth/me", { cache: "no-store" }).then((r) => r.json() as Promise<Me>),
+  demoInfo: (): Promise<DemoInfo> => fetch("/api/demo", { cache: "no-store" }).then((r) => r.json() as Promise<DemoInfo>),
+  startDemo: () => mutate<{ ok: boolean; workspaceId: string; expiresAt: string }>("/api/demo", { method: "POST" }),
+  resetDemo: () => mutate<{ ok: boolean; workspaceId: string; expiresAt: string }>("/api/demo/reset", { method: "POST" }),
+  signOut: () => mutate<{ ok: boolean }>("/api/auth/signout", { method: "POST" }),
+  deleteAccount: () => mutate<{ ok: boolean }>("/api/auth/account", { method: "DELETE" }),
+  claim: (workspaceId: string) =>
+    mutate<{ ok: boolean; claimed: boolean }>("/api/auth/claim", { method: "POST", body: JSON.stringify({ workspaceId }) }),
+  providerHref: (provider: string, next: string) => `/api/auth/login?provider=${encodeURIComponent(provider)}&next=${encodeURIComponent(next)}`,
+};
+
 /** Download the workspace export (header-authenticated, so not a plain link). */
 export async function downloadExport(ws: string): Promise<void> {
   const res = await fetch("/api/workspace", { headers: { "x-workspace-id": ws } });

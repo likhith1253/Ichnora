@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import type { Me } from "./api";
 import type { Conversation, Status } from "./types";
 
 export function Sidebar({
@@ -9,22 +10,26 @@ export function Sidebar({
   activeId,
   busy,
   status,
+  me,
   onNew,
   onSelect,
   onRename,
   onDelete,
   onClose,
+  onSignOut,
 }: {
   open: boolean;
   conversations: Conversation[];
   activeId: string | null;
   busy: boolean;
   status: Status | null;
+  me?: Me | null;
   onNew: () => void;
   onSelect: (id: string) => void;
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
   onClose: () => void;
+  onSignOut?: () => void;
 }) {
   const [renaming, setRenaming] = useState<string | null>(null);
 
@@ -103,6 +108,25 @@ export function Sidebar({
           </ul>
         </nav>
         <footer className="rail-foot" aria-live="polite">
+          {me?.demo ? (
+            <span className="demo-chip">Demo workspace</span>
+          ) : me?.signedIn && me.user ? (
+            <div className="whoami">
+              {me.user.avatarUrl ? (
+                <img className="avatar" src={me.user.avatarUrl} alt="" width={26} height={26} referrerPolicy="no-referrer" />
+              ) : (
+                <span className="avatar" aria-hidden>
+                  {(me.user.name ?? me.user.email ?? "?").slice(0, 1).toUpperCase()}
+                </span>
+              )}
+              <span className="whoami-name">{me.user.name ?? me.user.email ?? "Signed in"}</span>
+              {onSignOut && (
+                <button type="button" className="link-btn" onClick={onSignOut}>
+                  Sign out
+                </button>
+              )}
+            </div>
+          ) : null}
           {!status ? (
             <span className="st">Connecting…</span>
           ) : (

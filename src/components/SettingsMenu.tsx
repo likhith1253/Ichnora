@@ -1,12 +1,26 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, downloadExport } from "./api";
+import { api, downloadExport, type Me } from "./api";
 
-/** Privacy controls: export everything, or forget everything. */
-export function SettingsMenu({ ws, onForgotten }: { ws: string | null; onForgotten: () => void }) {
+/** Privacy and account controls: export, forget, sign out, delete account. */
+export function SettingsMenu({
+  ws,
+  me,
+  onForgotten,
+  onSignOut,
+  onDeleteAccount,
+  onTryDemo,
+}: {
+  ws: string | null;
+  me?: Me | null;
+  onForgotten: () => void;
+  onSignOut?: () => void;
+  onDeleteAccount?: () => void;
+  onTryDemo?: () => void;
+}) {
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState<null | "export" | "forget">(null);
+  const [busy, setBusy] = useState<null | "export" | "forget" | "delete">(null);
   const [msg, setMsg] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -59,6 +73,20 @@ export function SettingsMenu({ ws, onForgotten }: { ws: string | null; onForgott
     }
   };
 
+  const deleteAccount = async () => {
+    if (!onDeleteAccount) return;
+    if (!window.confirm("Delete your account? Your workspaces, conversations and memory will be permanently deleted. This cannot be undone.")) return;
+    setBusy("delete");
+    try {
+      await onDeleteAccount();
+    } catch (e) {
+      setMsg((e as Error).message);
+      setBusy(null);
+    }
+  };
+
+  const signedIn = Boolean(me?.signedIn && me.user);
+
   return (
     <div className="settings" ref={ref}>
       <button
@@ -74,7 +102,19 @@ export function SettingsMenu({ ws, onForgotten }: { ws: string | null; onForgott
       </button>
       {open && (
         <div id="privacy-menu" className="popover" role="group" aria-label="Your data">
-          <p className="popover-note">Stored only in this app’s local database, keyed to this browser.</p>
+          {signedIn && me?.user && (
+            <div className="menu-account">
+              <strong>{me.user.name ?? me.user.email ?? "Signed in"}</strong>
+              {me.user.name && me.user.email && <span>{me.user.email}</span>}
+            </div>
+          )}
+          <p className="popover-note">
+            {me?.demo
+              ? "Stored in this app’s local database, as a disposable demo workspace."
+              : signedIn
+                ? "Stored in this app’s local database, attached to your account."
+                : "Stored only in this app’s local database, keyed to this browser."}
+          </p>
           <button type="button" className="menu-item" onClick={exportData} disabled={!!busy} autoFocus>
             <strong>{busy === "export" ? "Preparing…" : "Export my data"}</strong>
             <span>Download everything as JSON</span>
@@ -83,6 +123,25 @@ export function SettingsMenu({ ws, onForgotten }: { ws: string | null; onForgott
             <strong>{busy === "forget" ? "Forgetting…" : "Forget everything"}</strong>
             <span>Permanently delete this workspace</span>
           </button>
+          {!signedIn && !me?.demo && me?.demoEnabled && onTryDemo && (
+            <button type="button" className="menu-item" onClick={onTryDemo} disabled={!!busy}>
+              <strong>Try the demo</strong>
+              <span>A seeded, disposable example workspace</span>
+            </button>
+          )}
+          {signedIn && (
+            <>
+              <div className="popover-divider" />
+              <button type="button" className="menu-item" onClick={onSignOut} disabled={!!busy}>
+                <strong>Sign out</strong>
+                <span>End this session on this device</span>
+              </button>
+              <button type="button" className="menu-item danger" onClick={deleteAccount} disabled={!!busy}>
+                <strong>{busy === "delete" ? "Deleting…" : "Delete account"}</strong>
+                <span>Permanently delete your account and all its data</span>
+              </button>
+            </>
+          )}
           {msg && (
             <p className="popover-note" role="status">
               {msg}

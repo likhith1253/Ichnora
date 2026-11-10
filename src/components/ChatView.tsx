@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
+import type { DemoPrompt } from "./api";
 import { timeOnly } from "./format";
 import { Markdown, MessageItem, PhaseIndicator, RecallBadge } from "./MessageItem";
 import type { MemorySummary, Message, Phase, Status } from "./types";
@@ -48,6 +49,7 @@ export function ChatView({
   onStop,
   onDismissNotice,
   onOpenLoops,
+  demoPrompts,
 }: {
   title?: string;
   status: Status | null;
@@ -64,10 +66,15 @@ export function ChatView({
   onStop: () => void;
   onDismissNotice: (id: string) => void;
   onOpenLoops: () => void;
+  demoPrompts?: DemoPrompt[];
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const empty = messages.length === 0 && !pending && !loading;
+  const demo = Boolean(demoPrompts?.length);
+  const suggestions = demo
+    ? demoPrompts!.map((p) => ({ id: p.id, label: p.label, text: p.text, hint: p.hint }))
+    : SUGGESTIONS.map((s) => ({ id: s.text, label: s.label, text: s.text, hint: undefined as string | undefined }));
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -124,18 +131,20 @@ export function ChatView({
           )}
           {empty && (
             <section className="welcome" aria-labelledby="welcome-h">
-              <p className="eyebrow">Minimi</p>
-              <h2 id="welcome-h">Research that remembers when you asked.</h2>
+              <p className="eyebrow">{demo ? "Demo · guided tour" : "Minimi"}</p>
+              <h2 id="welcome-h">{demo ? "A seeded workspace, ready to explore." : "Research that remembers when you asked."}</h2>
               <p>
-                Ask a question and Minimi checks the web, cites what it read and keeps a dated record. Tell it what you’ve promised and it keeps track. Later,
-                ask <q>has anything changed since?</q> or <q>what do I owe Rahul?</q>
+                {demo
+                  ? "Sample conversations from the last week are already here. Pick one to see date recall, a freshness re-check, a computed change report, open loops and a decision history — all from the app’s own memory."
+                  : "Ask a question and Minimi checks the web, cites what it read and keeps a dated record. Tell it what you’ve promised and it keeps track. Later, ask “has anything changed since?” or “what do I owe Rahul?”"}
               </p>
               <ul className="suggestions">
-                {SUGGESTIONS.map((s) => (
-                  <li key={s.text}>
+                {suggestions.map((s) => (
+                  <li key={s.id}>
                     <button type="button" onClick={() => onSend(s.text)} disabled={!!pending || !!notConfigured}>
                       <span className="sg-label">{s.label}</span>
                       <span>{s.text}</span>
+                      {s.hint && <span className="sg-hint">{s.hint}</span>}
                     </button>
                   </li>
                 ))}
