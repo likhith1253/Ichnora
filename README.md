@@ -5,21 +5,39 @@ A personal research agent with **one tool, web search**, and memory built around
 - **What did I promise, and what is still open?** Commitments, waiting-on items and deadlines (open loops), plus how decisions evolved.
 - **Has it changed since?** Dated research snapshots compared with fresh evidence, with official sources and validated citations.
 
-Design rationale and architecture diagram: [DESIGN.md](DESIGN.md) · measured results: [EVALUATION.md](EVALUATION.md) and [eval/live.md](eval/live.md) · engineering audit: [docs/ENGINEERING_AUDIT.md](docs/ENGINEERING_AUDIT.md).
+- **Design and architecture:** [DESIGN.md](DESIGN.md)
+- **Measured results:** [EVALUATION.md](EVALUATION.md) and [eval/live.md](eval/live.md)
+- **How we built it:** [JOURNEY.md](JOURNEY.md)
 
 ## Demo
 
 ![Minimi demo: a computed Then → Now re-check, live date recall, open loops and decision history](docs/media/demo.gif)
 
+### Walkthrough
 
-| | |
-|---|---|
-| ![Re-check answer with numbered citations](docs/media/01-recheck-answer.png) | ![Then → Now comparison computed by the app](docs/media/02-then-now-card.png) |
-| **Re-check answer.** Every price is cited `[n]` to an official page. | **Then → Now, computed in code.** CHANGED / NO MATERIAL CHANGE FOUND / UNABLE TO VERIFY, with each row's evidence. |
-| ![Sources labelled official / third-party and full page / snippet](docs/media/03-sources-evidence.png) | ![Exact recall of a question asked on 3 November](docs/media/04-date-recall.png) |
-| **Sources.** Each is labelled official or third-party, and read in full or snippet only. | **"What did I ask you on 3 November?"** The question comes back verbatim with its local time, and no search runs. |
-| ![Open loops: commitments, waiting on others, tentative intentions](docs/media/05-open-loops.png) | ![Memory: decision timeline and dated research snapshots](docs/media/07-decision-timeline.png) |
-| **Open loops.** Taken from your own words, with real due dates. Intentions are never counted as promises. | **Memory.** The decision timeline keeps superseded steps, and research snapshots are the baselines for re-checks. |
+**1. Exact recall.** Asked "What did I ask you on 3 November?", Minimi returns the question word for word, with its local time. No search runs.
+
+![Exact recall of a question asked on 3 November](docs/media/1-date-recall.png)
+
+**2. Re-check answer.** Every price is cited `[n]` to an official page.
+
+![Re-check answer with numbered citations](docs/media/2-recheck-answer.png)
+
+**3. Then → Now, computed in code.** Each item is marked CHANGED, NO MATERIAL CHANGE FOUND or UNABLE TO VERIFY, with its evidence.
+
+![Then → Now comparison computed by the app](docs/media/3-then-now.png)
+
+**4. Sources.** Each source is labelled official or third-party, and as read in full or snippet only.
+
+![Sources labelled official or third-party, full page or snippet](docs/media/4-sources.png)
+
+**5. Open loops.** Commitments come from your own words, with real due dates. Intentions are never counted as promises.
+
+![Open loops: commitments, waiting on others, tentative intentions](docs/media/5-open-loops.png)
+
+**6. Memory.** The decision timeline keeps superseded steps, and research snapshots are the baselines for re-checks.
+
+![Memory: decision timeline and dated research snapshots](docs/media/6-memory.png)
 
 
 ## Quick start (Windows, macOS, Linux)
@@ -60,7 +78,7 @@ Minimi is **local-first**: your conversations, memories, open loops and research
 
 ### Two modes
 
-- **LOCAL mode (default).** No OAuth keys configured: a single user, no sign-in screen, a random workspace id kept in the browser. Works exactly as before. This is a single-user trust model — do not expose it as a shared deployment.
+- **LOCAL mode (default).** No OAuth keys configured: a single user, no sign-in screen, a random workspace id kept in the browser. Intended for personal use on your own machine.
 - **AUTH mode.** Turns on automatically when `AUTH_SECRET` **and** at least one provider (`*_CLIENT_ID` + `*_CLIENT_SECRET`) are set. The workspace is then decided by the server-side session, and the browser-supplied header is ignored. Every route requires a session.
 
 There is no email/password: sign-in is only via OAuth.
@@ -169,7 +187,6 @@ src/components/ chat view, sources & evidence, Then/Now card, open loops view, m
 - **Deleting a conversation** deletes every memory, research snapshot and observation derived from it.
 - **The "Your data" menu** exports everything as JSON or forgets everything.
 - **Logs** contain sizes and latencies, with secrets redacted.
-- **Not encrypted at rest.** SQLite is a plain file: confidentiality relies on OS file permissions and full-disk encryption. If the app is hosted on a remote server, the database sits on that host — that is not "local to the end user".
 
 ## Troubleshooting
 
@@ -180,11 +197,3 @@ src/components/ chat view, sources & evidence, Then/Now card, open loops view, m
 - **Sign-in never appears**: AUTH mode needs `AUTH_SECRET` **and** a full provider pair. Without them the app stays in LOCAL mode, by design.
 - **The demo says its live budget is spent**: that demo session used its small turn/credit allowance. Memory, open loops and history still work; **Reset demo** starts a fresh one.
 - **`better-sqlite3` fails to install**: use Node 20 LTS with the standard Windows build tools, or a Node version with prebuilt binaries.
-
-## Limitations
-
-- Statement extraction is rule-based. It is precise on the patterns it knows, but misses unusual phrasings (see `EVALUATION.md`).
-- Then/now values are parsed from the answer's tables. If the model writes prose instead, the computed report says it cannot verify.
-- Tavily `published_date` is an estimate and is often missing for non-news pages.
-- In LOCAL mode the app is single-user and single-process: the workspace id lives in the browser's localStorage, and turns are serialised in process. Plain HTTP only; it is a single-user trust model, not a hardened multi-tenant deployment, and SQLite is not encrypted at rest.
-- Authentication is OAuth-only (GitHub, optionally Google); there is no email/password and no account recovery beyond signing in with the same provider again.
