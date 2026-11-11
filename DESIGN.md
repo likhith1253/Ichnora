@@ -42,7 +42,7 @@ flowchart LR
 ## 2. Zoom in
 
 <a id="c1"></a>
-<details>
+<details open>
 <summary><b>① Chat API</b>: one turn, streamed end to end &nbsp;<kbd>▶ click to expand</kbd></summary>
 
 ```mermaid
