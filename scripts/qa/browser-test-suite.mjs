@@ -11,7 +11,7 @@ if (!fs.existsSync(SCREENSHOT_DIR)) {
 }
 
 async function runQaSuite() {
-  console.log("=== Starting Browser QA Suite for Minimi ===");
+  console.log("=== Starting Browser QA Suite for Ichnora ===");
   const results = {
     timestamp: new Date().toISOString(),
     browser: "Google Chrome",
@@ -203,7 +203,7 @@ async function runQaSuite() {
     await new Promise((r) => setTimeout(r, 400));
 
     // Type a message into textarea
-    const messageText = "Hello Minimi, this is an automated QA test message.";
+    const messageText = "Hello Ichnora, this is an automated QA test message.";
     const textareaExists = await page.$("textarea");
     let typingSuccess = false;
     let sendButtonInfo = null;

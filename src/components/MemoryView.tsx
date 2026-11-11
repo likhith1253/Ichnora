@@ -159,7 +159,7 @@ export function MemoryView({ ws, refreshKey, onOpenConversation }: { ws: string;
     <div className="view">
       <header className="view-head">
         <h1>Memory</h1>
-        <p>Everything Minimi keeps, with your own words and when you said them. Correct or delete anything.</p>
+        <p>Everything Ichnora keeps, with your own words and when you said them. Correct or delete anything.</p>
       </header>
       <label className="search-field">
         <span className="sr-only">Filter memory</span>

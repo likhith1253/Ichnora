@@ -20,7 +20,7 @@ import { runTurn, type TurnEvent } from "@/lib/agent/run";
 const cfg = getConfig();
 const enabled = Boolean(cfg.GROQ_API_KEY && cfg.TAVILY_API_KEY);
 const TZ = "Asia/Kolkata";
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), "minimi-live-"));
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ichnora-live-"));
 const db: DB = openDatabase(path.join(dir, "live.db"));
 const report: string[] = [];
 

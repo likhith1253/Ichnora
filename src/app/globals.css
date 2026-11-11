@@ -1,4 +1,4 @@
-/* Minimi — "the ledger".
+/* Ichnora — "the ledger".
    Quiet paper, ink, hairline rules and one accent (deep spruce).
    Serif for what you read, system sans for the chrome. No web fonts. */
 
@@ -14,6 +14,7 @@
   --accent: #1f5c52;
   --accent-ink: #174840;
   --accent-wash: #e3eeea;
+  --mark-accent: #7cc4b5;
   --danger: #a1342a;
   --danger-wash: #f6e4e0;
   --warn: #8a5a12;
@@ -41,6 +42,7 @@
     --accent: #7cc4b5;
     --accent-ink: #9fd8cb;
     --accent-wash: #1c2d29;
+    --mark-accent: #1f5c52;
     --danger: #ec8f80;
     --danger-wash: #35201c;
     --warn: #e0b36a;
@@ -101,8 +103,8 @@ q { quotes: "“" "”"; font-style: italic; }
 /* rail */
 .rail { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--rule); background: var(--bg); padding: 16px 12px 12px; }
 .brand { display: flex; align-items: center; gap: 10px; padding: 2px 6px 16px; }
-.mark-logo { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--ink); color: var(--bg); font: italic 600 16px/1 var(--serif); padding-bottom: 2px; }
-.brand-name { font: 600 17px/1 var(--serif); letter-spacing: 0.01em; }
+.ichnora-mark { flex: none; display: block; }
+.brand-name { font: 600 17.5px/1 var(--serif); letter-spacing: 0.01em; }
 .rail-close { margin-left: auto; display: none; }
 .new-btn { display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 12px; border: 1px solid var(--rule-2); border-radius: var(--r); background: var(--surface); font-size: 14px; color: var(--ink); }
 .new-btn:hover:not(:disabled) { border-color: var(--ink-2); }
@@ -153,7 +155,7 @@ q { quotes: "“" "”"; font-style: italic; }
 
 .welcome { padding: 6vh 0 12px; }
 .eyebrow { font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin: 0 0 14px; }
-.welcome h2 { font: 400 clamp(28px, 4.2vw, 38px)/1.15 var(--serif); letter-spacing: -0.01em; margin: 0 0 14px; max-width: 18ch; }
+.welcome h2 { font: 400 clamp(28px, 4.2vw, 38px)/1.15 var(--serif); letter-spacing: -0.01em; margin: 0 0 14px; max-width: 22ch; }
 .welcome > p { font: 17px/1.6 var(--serif); color: var(--ink-2); max-width: 36rem; margin: 0 0 28px; }
 .suggestions { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid var(--rule); }
 .suggestions li { border-bottom: 1px solid var(--rule); }

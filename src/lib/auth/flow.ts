@@ -9,6 +9,7 @@ import { sign, verify } from "./sign";
  * so every route uses identical, auditable logic.
  */
 
+// Retained cookie name for backward compatibility with OAuth handshakes.
 export const OAUTH_COOKIE = "minimi_oauth";
 /** The handshake cookie (state + PKCE verifier + intended destination) lives 10 minutes. */
 export const OAUTH_TTL_SECONDS = 600;

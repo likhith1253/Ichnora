@@ -70,7 +70,7 @@ export function LoopsView({ ws, refreshKey, onOpenConversation }: { ws: string; 
         <div className="empty-state">
           <h2>Nothing open.</h2>
           <p>
-            When you tell Minimi things like <q>I’ll send the proposal to Rahul by Friday</q> or <q>waiting on Priya for the contract</q>, they land here
+            When you tell Ichnora things like <q>I’ll send the proposal to Rahul by Friday</q> or <q>waiting on Priya for the contract</q>, they land here
             with your exact words and the date you said them.
           </p>
         </div>

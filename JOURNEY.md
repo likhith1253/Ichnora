@@ -1,6 +1,6 @@
 # Build notes
 
-These are honest notes from building Minimi: what broke, what changed along the way, and what was worth learning.
+These are honest notes from building Ichnora (originally developed as Minimi): what broke, what changed along the way, and what was worth learning.
 
 ## Picking a model and a search tool
 

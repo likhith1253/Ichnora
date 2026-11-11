@@ -77,12 +77,12 @@ export function cleanupDemoData(db: DB, cfg: AppConfig = getConfig(), now = new 
 }
 
 const CLEANUP_INTERVAL_MS = 10 * 60_000;
-const g = globalThis as unknown as { __minimiCleanupAt?: number };
+const g = globalThis as unknown as { __ichnoraCleanupAt?: number };
 
 /** Run housekeeping at most once every ten minutes (startup + periodic). */
 export function maybeCleanupDemos(db: DB, cfg: AppConfig = getConfig(), now = new Date()): void {
-  if (g.__minimiCleanupAt && now.getTime() - g.__minimiCleanupAt < CLEANUP_INTERVAL_MS) return;
-  g.__minimiCleanupAt = now.getTime();
+  if (g.__ichnoraCleanupAt && now.getTime() - g.__ichnoraCleanupAt < CLEANUP_INTERVAL_MS) return;
+  g.__ichnoraCleanupAt = now.getTime();
   try {
     cleanupDemoData(db, cfg, now);
   } catch {

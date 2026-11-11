@@ -377,7 +377,7 @@ describe("oauth handshake", () => {
 
   it("builds the callback origin from PUBLIC_BASE_URL, else the request", () => {
     const r = req("GET", "/");
-    expect(baseOrigin(r, { ...AUTH_CFG, PUBLIC_BASE_URL: "https://minimi.example" })).toBe("https://minimi.example");
+    expect(baseOrigin(r, { ...AUTH_CFG, PUBLIC_BASE_URL: "https://ichnora.example" })).toBe("https://ichnora.example");
     expect(baseOrigin(r, { ...AUTH_CFG, PUBLIC_BASE_URL: undefined })).toBe(BASE);
     expect(baseOrigin(r, { ...AUTH_CFG, PUBLIC_BASE_URL: "not a url" })).toBe(BASE);
   });

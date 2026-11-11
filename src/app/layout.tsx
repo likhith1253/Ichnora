@@ -1,9 +1,34 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
+const DESCRIPTION =
+  "Ichnora connects your conversations, memories, decisions and live web research into one searchable personal knowledge system.";
+
 export const metadata: Metadata = {
-  title: "Minimi — research, memory, open loops",
-  description: "A web-search research agent that remembers what you asked, and when.",
+  applicationName: "Ichnora",
+  title: {
+    default: "Ichnora — Remember the past. Discover the present.",
+    template: "%s · Ichnora",
+  },
+  description: DESCRIPTION,
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/favicon.ico", sizes: "32x32" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
+  openGraph: {
+    type: "website",
+    siteName: "Ichnora",
+    title: "Ichnora — Personal Memory & Knowledge Assistant",
+    description: DESCRIPTION,
+  },
+  twitter: {
+    card: "summary",
+    title: "Ichnora — Personal Memory & Knowledge Assistant",
+    description: DESCRIPTION,
+  },
 };
 
 export const viewport: Viewport = {

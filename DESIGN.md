@@ -1,6 +1,6 @@
-# Minimi — Design
+# Ichnora — Design
 
-Minimi is a research chat agent that **remembers what you asked and when**, and can tell you whether an earlier answer still holds. It uses one model (Groq `gpt-oss-120b`) and exactly one tool, `web_search`. Everything that must be *exactly right* (dates, history, commitments, sources, price comparisons) is handled by deterministic, tested application code over SQLite. The model's job is to understand the question and write a clear answer.
+Ichnora is a personal knowledge and research assistant that **remembers what you asked and when**, and can tell you whether an earlier answer still holds. It uses one model (Groq `gpt-oss-120b`) and exactly one tool, `web_search`. Everything that must be *exactly right* (dates, history, commitments, sources, price comparisons) is handled by deterministic, tested application code over SQLite. The model's job is to understand the question and write a clear answer.
 
 > **Reading guide:** start with the overview below. Each numbered part has a **details** link that jumps to its section. Click the grey <kbd>▶ click to expand</kbd> button (or anywhere on that line) to open the deep dive and its diagram.
 

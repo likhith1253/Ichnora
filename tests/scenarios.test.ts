@@ -216,7 +216,7 @@ describe("Scenario 5 — prompt injection is treated as data", () => {
 
 describe("Scenario 6 — persistence across restart", () => {
   it("retrieves messages, timestamps, timezone and memory after reopening the database", async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "minimi-"));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ichnora-"));
     const file = path.join(dir, "test.db");
     const ws = randomUUID();
     let db = openDatabase(file);

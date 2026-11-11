@@ -46,9 +46,9 @@ const DECISIONS_RE =
   /\b(?:decid(?:e|ed|ing)|decisions?|chose|choose|chosen|why did (?:we|i) (?:pick|choose|go with|use|select)|alternatives?|rejected|change[d]? (?:my|our) mind|my thinking|our thinking|earlier approach|what did we (?:pick|settle on|go with))\b/i;
 
 const NAME_RE = /\b([A-Z][a-z]{2,20})\b/g;
-const NOT_PERSON = new Set("What Which Who Why When Where How Has Have Did Does Do Is Are Was Were Can Could Should Would Will I I'm I've On In At For From The This That These Those Last Next My Our Monday Tuesday Wednesday Thursday Friday Saturday Sunday January February March April May June July August September October November December Today Tomorrow Yesterday Please Minimi Postgres PostgreSQL MongoDB CRM".split(" "));
+const NOT_PERSON = new Set("What Which Who Why When Where How Has Have Did Does Do Is Are Was Were Can Could Should Would Will I I'm I've On In At For From The This That These Those Last Next My Our Monday Tuesday Wednesday Thursday Friday Saturday Sunday January February March April May June July August September October November December Today Tomorrow Yesterday Please Ichnora Minimi Postgres PostgreSQL MongoDB CRM".split(" "));
 
-const GREETING_RE = /^\s*(?:hi|hello|hey|yo|hiya|good (?:morning|afternoon|evening)|thanks?(?: you)?|thank u|ok(?:ay)?|cool|great|nice)\b[\s!.,?]*(?:there|minimi)?[\s!.,?]*$/i;
+const GREETING_RE = /^\s*(?:hi|hello|hey|yo|hiya|good (?:morning|afternoon|evening)|thanks?(?: you)?|thank u|ok(?:ay)?|cool|great|nice)\b[\s!.,?]*(?:there|ichnora|minimi)?[\s!.,?]*$/i;
 
 const STOP = new Set(
   `a about above after again against all am an and any are as at be because been before being below between both but by can could did do does doing down during each few for from further had has have having he her here hers herself him himself his how i if in into is it its itself just me more most my myself no nor not now of off on once only or other our ours ourselves out over own same she should so some such than that the their theirs them themselves then there these they this those through to too under until up very was we were what when where which while who whom why will with you your yours yourself yourselves

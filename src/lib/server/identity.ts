@@ -16,6 +16,7 @@ import { maybeCleanupDemos } from "../demo/store";
  * - LOCAL mode: the long-standing header behaviour is unchanged.
  */
 
+// Retained cookie name for backward compatibility with existing user sessions.
 export const SESSION_COOKIE = "minimi_session";
 
 export type Identity =

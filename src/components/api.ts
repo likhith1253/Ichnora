@@ -2,6 +2,7 @@
 
 import type { Conversation, MemoryItem, Message, PersonalMemory, PersonalPatch, PersonalResponse, Status } from "./types";
 
+// Retained localStorage keys so existing LOCAL-mode workspaces keep their identity and history.
 const WS_KEY = "minimi.workspace";
 const ACTIVE_KEY = "minimi.activeConversation";
 
@@ -148,7 +149,7 @@ export async function downloadExport(ws: string): Promise<void> {
   const res = await fetch("/api/workspace", { headers: { "x-workspace-id": ws } });
   if (!res.ok) throw new Error(`Export failed (${res.status})`);
   const blob = await res.blob();
-  const name = res.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1] ?? "minimi-export.json";
+  const name = res.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1] ?? "ichnora-export.json";
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;

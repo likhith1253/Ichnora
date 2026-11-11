@@ -1,8 +1,8 @@
 {
-  "name": "minimi",
+  "name": "ichnora",
   "version": "1.0.0",
   "private": true,
-  "description": "Web-search research agent with durable temporal memory",
+  "description": "Personal AI knowledge and memory assistant with durable temporal reasoning and live web search",
   "engines": {
     "node": ">=20.9"
   },

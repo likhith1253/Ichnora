@@ -136,7 +136,7 @@ export const MessageItem = memo(function MessageItem({ message, memory }: { mess
   return (
     <article className={`msg ${message.role}${message.status !== "complete" ? ` ${message.status}` : ""}`}>
       <header className="msg-head">
-        <span className="who">{isUser ? "You" : "Minimi"}</span>
+        <span className="who">{isUser ? "You" : "Ichnora"}</span>
         <time dateTime={message.createdAtUtc} title={`Captured in ${message.timezone}`}>
           {dateTime(message.createdAtUtc)}
         </time>

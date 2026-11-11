@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { identity, type Me } from "./api";
+import { IchnoraMark } from "./IchnoraMark";
 
 const ERRORS: Record<string, string> = {
   state: "That sign-in attempt expired or could not be verified. Please try again.",
@@ -83,14 +84,12 @@ export function SignIn() {
     <main className="auth">
       <div className="auth-card">
         <div className="brand auth-brand">
-          <span className="mark-logo" aria-hidden>
-            m
-          </span>
-          <span className="brand-name">Minimi</span>
+          <IchnoraMark size={28} />
+          <span className="brand-name">Ichnora</span>
         </div>
-        <p className="eyebrow">The ledger that remembers</p>
+        <p className="eyebrow">Remember the past. Discover the present.</p>
         <h1>Sign in to keep your work</h1>
-        <p className="auth-lede">Your conversations, commitments and research record — saved to your account, ready on any device.</p>
+        <p className="auth-lede">Ichnora connects your conversations, memories, decisions and live web research into one searchable personal knowledge system.</p>
 
         {err && (
           <div className="notice error" role="alert">

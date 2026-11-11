@@ -37,28 +37,29 @@ export function migrate(db: DB): void {
 }
 
 export function defaultDbPath(): string {
+  // Retained MINIMI_DB_PATH and ./data/minimi.db for backward compatibility with existing local databases.
   const configured = process.env.MINIMI_DB_PATH?.trim();
   return configured ? path.resolve(configured) : path.join(process.cwd(), "data", "minimi.db");
 }
 
 // Survive Next.js dev hot-reloads without leaking connections.
-const g = globalThis as unknown as { __minimiDb?: DB };
+const g = globalThis as unknown as { __ichnoraDb?: DB };
 
 export function getDb(): DB {
-  if (!g.__minimiDb) {
-    g.__minimiDb = openDatabase(defaultDbPath());
+  if (!g.__ichnoraDb) {
+    g.__ichnoraDb = openDatabase(defaultDbPath());
     // Startup housekeeping: drop expired demo workspaces, sessions and cached
     // answers. Never fatal, and at most once every ten minutes per process.
     try {
-      maybeCleanupDemos(g.__minimiDb);
+      maybeCleanupDemos(g.__ichnoraDb);
     } catch {
       /* housekeeping must never prevent the app from booting */
     }
   }
-  return g.__minimiDb;
+  return g.__ichnoraDb;
 }
 
 /** Test hook: swap the process-wide database. */
 export function setDbForTesting(db: DB | undefined): void {
-  g.__minimiDb = db;
+  g.__ichnoraDb = db;
 }

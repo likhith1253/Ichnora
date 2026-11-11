@@ -131,12 +131,12 @@ export function ChatView({
           )}
           {empty && (
             <section className="welcome" aria-labelledby="welcome-h">
-              <p className="eyebrow">{demo ? "Demo · guided tour" : "Minimi"}</p>
-              <h2 id="welcome-h">{demo ? "A seeded workspace, ready to explore." : "Research that remembers when you asked."}</h2>
+              <p className="eyebrow">{demo ? "Demo · guided tour" : "Ichnora"}</p>
+              <h2 id="welcome-h">{demo ? "A seeded workspace, ready to explore." : "Remember the past. Discover the present."}</h2>
               <p>
                 {demo
-                  ? "Sample conversations from the last week are already here. Pick one to see date recall, a freshness re-check, a computed change report, open loops and a decision history — all from the app’s own memory."
-                  : "Ask a question and Minimi checks the web, cites what it read and keeps a dated record. Tell it what you’ve promised and it keeps track. Later, ask “has anything changed since?” or “what do I owe Rahul?”"}
+                  ? "Sample conversations from the last week are already here. Pick one to see date recall, a freshness re-check, a computed change report, open loops and a decision history — all from Ichnora’s own memory."
+                  : "Ichnora connects your conversations, memories, decisions and live web research into one searchable personal knowledge system."}
               </p>
               <ul className="suggestions">
                 {suggestions.map((s) => (
@@ -168,7 +168,7 @@ export function ChatView({
               </article>
               <article className="msg assistant streaming" aria-busy="true">
                 <header className="msg-head">
-                  <span className="who">Minimi</span>
+                  <span className="who">Ichnora</span>
                 </header>
                 {(pending.phase !== "writing" || !pending.text) && <PhaseIndicator phase={pending.phase} searches={pending.searches} />}
                 {pending.phase === "writing" && pending.text && (
@@ -239,7 +239,7 @@ export function ChatView({
             value={input}
             onChange={(e) => onInput(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder={notConfigured ? `Add ${status.missingVar ?? "an API key"} to start…` : "Ask, tell Minimi what you’ve promised, or ask what changed…"}
+            placeholder={notConfigured ? `Add ${status.missingVar ?? "an API key"} to start…` : "Ask, tell Ichnora what you’ve promised, or ask what changed…"}
             rows={1}
             maxLength={8000}
             autoFocus

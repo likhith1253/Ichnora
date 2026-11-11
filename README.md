@@ -1,6 +1,8 @@
-# Minimi
+# Ichnora
 
-A personal research agent with **one tool, web search**, and memory built around three questions:
+**Remember the past. Discover the present.**
+
+Ichnora is a local-first, cloud-assisted personal AI knowledge and memory assistant with **one tool, web search**, built around three questions:
 - **What did I ask, and when?** Exact recall of past questions by date or topic, across conversations.
 - **What did I promise, and what is still open?** Commitments, waiting-on items and deadlines (open loops), plus how decisions evolved.
 - **Has it changed since?** Dated research snapshots compared with fresh evidence, with official sources and validated citations.
@@ -11,11 +13,11 @@ A personal research agent with **one tool, web search**, and memory built around
 
 ## Demo
 
-![Minimi demo: a computed Then → Now re-check, live date recall, open loops and decision history](docs/media/demo.gif)
+![Ichnora demo: a computed Then → Now re-check, live date recall, open loops and decision history](docs/media/demo.gif)
 
 ### Walkthrough
 
-**1. Exact recall.** Asked "What did I ask you on 3 November?", Minimi returns the question word for word, with its local time. No search runs.
+**1. Exact recall.** Asked "What did I ask you on 3 November?", Ichnora returns the question word for word, with its local time. No search runs.
 
 ![Exact recall of a question asked on 3 November](docs/media/1-date-recall.png)
 
@@ -74,7 +76,7 @@ The **Open loops** and **Memory** views show the same records: their provenance 
 
 ## Accounts and the demo
 
-Minimi is **local-first**: your conversations, memories, open loops and research history live in the local SQLite file. Signing in only establishes *identity* — it does not move your data to any cloud service, and there is no background sync.
+Ichnora is **local-first**: your conversations, memories, open loops and research history live in the local SQLite file. Signing in only establishes *identity* — it does not move your data to any cloud service, and there is no background sync.
 
 ### Two modes
 
@@ -102,7 +104,7 @@ There is no email/password: sign-in is only via OAuth.
 
 Scopes are minimal (`read:user user:email` for GitHub, `openid email profile` for Google); tokens are used once to read your profile and never stored.
 
-Behind a proxy or tunnel, set `PUBLIC_BASE_URL` to the public origin (e.g. `https://minimi.example`) so the callback URLs are built correctly. On first sign-in you are offered the chance to attach your existing local workspace to the account — this is never automatic. **Account deletion** removes the user, its workspaces and everything derived from them. The **"Your data"** menu also has an account section and a sign-out.
+Behind a proxy or tunnel, set `PUBLIC_BASE_URL` to the public origin (e.g. `https://ichnora.example`) so the callback URLs are built correctly. On first sign-in you are offered the chance to attach your existing local workspace to the account — this is never automatic. **Account deletion** removes the user, its workspaces and everything derived from them. The **"Your data"** menu also has an account section and a sign-out.
 
 ### Try demo
 
@@ -122,7 +124,7 @@ Behind a proxy or tunnel, set `PUBLIC_BASE_URL` to the public origin (e.g. `http
 | `TAVILY_MONTHLY_CREDITS` / `TAVILY_RESERVE_CREDITS` | no | `1000` / `100` | Credit budget, and the reserve kept for change checks |
 | `DEFAULT_TIMEZONE` | no | `Asia/Kolkata` | Used when the browser sends no timezone |
 | `MEMORY_DISTILL` | no | `heuristic` | `model` adds one LLM call per research turn |
-| `MINIMI_DB_PATH` | no | `./data/minimi.db` | SQLite file (git-ignored) |
+| `MINIMI_DB_PATH` | no | `./data/minimi.db` | SQLite file (git-ignored; legacy name retained for compatibility) |
 | `AGENT_TIMEOUT_MS` | no | `120000` | Per-turn timeout |
 | `AUTH_SECRET` | for AUTH mode | – | Signs the session cookie and OAuth state. Any long random string |
 | `PUBLIC_BASE_URL` | no | request origin | Public origin used to build OAuth callback URLs |

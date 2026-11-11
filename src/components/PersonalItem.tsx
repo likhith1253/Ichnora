@@ -164,7 +164,7 @@ export function PersonalItem({
             className="btn small ghost danger"
             disabled={busy}
             onClick={() => {
-              if (window.confirm(`Delete “${m.content}”? Minimi will stop remembering it.`)) run(() => actions.onDelete(m.id));
+              if (window.confirm(`Delete “${m.content}”? Ichnora will stop remembering it.`)) run(() => actions.onDelete(m.id));
             }}
           >
             Delete

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { Me } from "./api";
+import { IchnoraMark } from "./IchnoraMark";
 import type { Conversation, Status } from "./types";
 
 export function Sidebar({
@@ -45,10 +46,8 @@ export function Sidebar({
     <>
       <aside className={`rail${open ? " open" : ""}`} aria-label="Conversations">
         <div className="brand">
-          <span className="mark-logo" aria-hidden>
-            m
-          </span>
-          <span className="brand-name">Minimi</span>
+          <IchnoraMark size={26} />
+          <span className="brand-name">Ichnora</span>
           <button type="button" className="icon-btn rail-close" onClick={onClose} aria-label="Close menu">
             <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden>
               <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="1.5" />

@@ -45,7 +45,7 @@ export function ChangeCard({ report }: { report: ChangeReport }) {
           </p>
         </div>
         <span className="cc-provenance" title="Computed deterministically from stored snapshots and today's sources; not written by the model.">
-          Computed by Minimi from recorded evidence
+          Computed by Ichnora from recorded evidence
         </span>
       </header>
       <ul>

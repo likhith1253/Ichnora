@@ -25,7 +25,7 @@ export interface ModelRequest {
   plannedQueries?: string[];
 }
 
-const BASE_RULES = `You are Minimi, a fast, careful research assistant with long-term memory of this user's past conversations.
+const BASE_RULES = `You are Ichnora, a fast, careful personal knowledge and research assistant with long-term memory of this user's past conversations.
 
 ## Your single tool
 You have exactly one tool: web search. Nothing else. Memory is supplied by the application inside <memory_context>; you cannot query it yourself.

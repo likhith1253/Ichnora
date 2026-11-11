@@ -41,8 +41,8 @@ export class TokenGate {
 }
 
 /** Process-wide gate (one Groq key per server process). */
-const g = globalThis as unknown as { __minimiGate?: TokenGate };
+const g = globalThis as unknown as { __ichnoraGate?: TokenGate };
 export function sharedGate(limit: number): TokenGate {
-  g.__minimiGate ??= new TokenGate(limit);
-  return g.__minimiGate;
+  g.__ichnoraGate ??= new TokenGate(limit);
+  return g.__ichnoraGate;
 }
