@@ -11,7 +11,6 @@ Design rationale and architecture diagram: [DESIGN.md](DESIGN.md) · measured re
 
 ![Minimi demo: a computed Then → Now re-check, live date recall, open loops and decision history](docs/media/demo.gif)
 
-▶ The full recording (about 50 s, no audio) is [docs/media/demo.webm](docs/media/demo.webm). It was recorded with the built-in **Try the demo** workspace, so it needs no data of your own.
 
 | | |
 |---|---|
