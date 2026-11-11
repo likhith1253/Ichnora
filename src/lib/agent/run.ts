@@ -287,7 +287,9 @@ export async function* runTurn(deps: AgentDeps, input: TurnInput, signal: AbortS
     // Evidence ledger: validated sources → claim links → normalised observations →
     // a then/now comparison computed in code for change checks.
     const sources = collectSources(raw, finalText, createdAt.toISOString());
-    const claims = failure ? null : mapClaims(finalText, sources);
+    // Citation coverage is only meaningful for answers backed by web evidence;
+    // recall/open-loop answers come from the user's own saved words.
+    const claims = failure || raw.length === 0 ? null : mapClaims(finalText, sources);
     const currentObs = failure
       ? []
       : extractObservations(finalText, sources, userMessage.localDate).map((o) => (searchUnavailable ? { ...o, evidenceLevel: "recollection" as const, sourceUrl: null } : o));
