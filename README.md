@@ -7,7 +7,7 @@ A personal research agent with **one tool, web search**, and memory built around
 
 - **Design and architecture:** [DESIGN.md](DESIGN.md)
 - **Measured results:** [EVALUATION.md](EVALUATION.md) and [eval/live.md](eval/live.md)
-- **How we built it:** [JOURNEY.md](JOURNEY.md)
+- **Build notes:** [JOURNEY.md](JOURNEY.md)
 
 ## Demo
 
