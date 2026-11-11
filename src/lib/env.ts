@@ -37,6 +37,8 @@ const schema = z.object({
   GOOGLE_CLIENT_SECRET: z.string().optional(),
   /** Absolute origin used to build OAuth callback URLs (default: derived from the request). */
   PUBLIC_BASE_URL: z.string().optional(),
+  /** Only behind a reverse proxy you control: trust the proxy-appended client IP. */
+  TRUST_PROXY: z.preprocess((v) => (typeof v === "string" ? ["1", "true", "yes", "on"].includes(v.toLowerCase()) : v), z.boolean()).default(false),
 
   /* ---- demo (always optional; LOCAL mode works without any of them) ---- */
   DEMO_ENABLED: z.enum(["1", "0", "true", "false", "yes", "no", "on", "off"]).default("true").transform((v) => v === "1" || v === "true" || v === "yes" || v === "on"),
@@ -51,6 +53,8 @@ const schema = z.object({
   /** Demo creations allowed per IP, and the window those are counted over. */
   DEMO_RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(100).default(5),
   DEMO_RATE_LIMIT_WINDOW_MINUTES: z.coerce.number().int().min(1).max(1440).default(60),
+  /** Hard cap on demos created per window across ALL clients (protects free quotas even if IPs rotate). */
+  DEMO_GLOBAL_MAX: z.coerce.number().int().min(1).max(10000).default(30),
 });
 
 export type AppConfig = z.infer<typeof schema>;
@@ -113,6 +117,7 @@ export function getConfig(env: NodeJS.ProcessEnv = projectEnv()): AppConfig {
     GOOGLE_CLIENT_ID: clean(env.GOOGLE_CLIENT_ID),
     GOOGLE_CLIENT_SECRET: clean(env.GOOGLE_CLIENT_SECRET),
     PUBLIC_BASE_URL: clean(env.PUBLIC_BASE_URL),
+    TRUST_PROXY: clean(env.TRUST_PROXY),
     DEMO_ENABLED: clean(env.DEMO_ENABLED)?.toLowerCase(),
     DEMO_TTL_HOURS: clean(env.DEMO_TTL_HOURS),
     DEMO_MAX_TURNS: clean(env.DEMO_MAX_TURNS),
@@ -120,6 +125,7 @@ export function getConfig(env: NodeJS.ProcessEnv = projectEnv()): AppConfig {
     DEMO_CACHE_TTL_MINUTES: clean(env.DEMO_CACHE_TTL_MINUTES),
     DEMO_RATE_LIMIT_MAX: clean(env.DEMO_RATE_LIMIT_MAX),
     DEMO_RATE_LIMIT_WINDOW_MINUTES: clean(env.DEMO_RATE_LIMIT_WINDOW_MINUTES),
+    DEMO_GLOBAL_MAX: clean(env.DEMO_GLOBAL_MAX),
   });
 }
 

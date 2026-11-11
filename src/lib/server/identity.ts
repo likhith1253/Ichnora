@@ -5,6 +5,7 @@ import { readCookie } from "../auth/cookies";
 import { sameOrigin } from "../auth/csrf";
 import { findSession } from "../auth/sessions";
 import { badRequest, json, workspaceFrom } from "./http";
+import { maybeCleanupDemos } from "../demo/store";
 
 /**
  * The single place that decides which workspace an API request acts on.
@@ -23,6 +24,7 @@ export type Identity =
 
 export function resolveWorkspace(req: Request, db: DB, cfg: AppConfig = getConfig()): Identity {
   const mode = authMode(cfg);
+  maybeCleanupDemos(db, cfg); // throttled (≤ once / 10 min); expired demos & sessions go away
 
   if (mode === "auth") {
     if (!sameOrigin(req, cfg.PUBLIC_BASE_URL)) {
@@ -55,7 +57,12 @@ export function resolveWorkspace(req: Request, db: DB, cfg: AppConfig = getConfi
   const ws = workspaceFrom(req);
   if (!ws) return { ok: false, response: badRequest("Missing or invalid x-workspace-id header") };
   const row = getWorkspace(db, ws);
-  return { ok: true, workspaceId: ws, user: null, demo: row?.kind === "demo", mode };
+  // The bare header may only open an unowned LOCAL workspace. Demo workspaces
+  // need their session cookie (and expire); account workspaces need sign-in.
+  if (row && (row.kind !== "local" || row.ownerUserId)) {
+    return { ok: false, response: json({ error: "This workspace requires its own session", authRequired: row.kind === "user" }, 403) };
+  }
+  return { ok: true, workspaceId: ws, user: null, demo: false, mode };
 }
 
 /** DEMO budget enforcement is only meaningful inside a demo workspace. */

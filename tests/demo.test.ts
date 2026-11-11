@@ -228,8 +228,11 @@ describe("demo creation rate limit", () => {
   });
 
   it("reads the client IP from proxy headers", () => {
-    expect(clientIp(new Request("http://x", { headers: { "x-forwarded-for": "9.9.9.9, 10.0.0.1" } }))).toBe("9.9.9.9");
-    expect(clientIp(new Request("http://x", { headers: { "x-real-ip": "8.8.8.8" } }))).toBe("8.8.8.8");
-    expect(clientIp(new Request("http://x"))).toBe("local");
+    // Forwarding headers are client-controlled: ignored unless TRUST_PROXY.
+    expect(clientIp(new Request("http://x", { headers: { "x-forwarded-for": "9.9.9.9, 10.0.0.1" } }))).toBe("direct");
+    // Behind a trusted proxy, the right-most hop (appended by the proxy) is used.
+    expect(clientIp(new Request("http://x", { headers: { "x-forwarded-for": "9.9.9.9, 10.0.0.1" } }), true)).toBe("10.0.0.1");
+    expect(clientIp(new Request("http://x", { headers: { "x-real-ip": "8.8.8.8" } }), true)).toBe("8.8.8.8");
+    expect(clientIp(new Request("http://x"))).toBe("direct");
   });
 });

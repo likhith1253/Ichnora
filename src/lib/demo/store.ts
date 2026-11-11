@@ -36,8 +36,8 @@ function insertDemoWorkspace(db: DB, userId: string, cfg: AppConfig, now: Date):
 
 /** Create a brand new, seeded, expiring demo workspace owned by a guest user. */
 export function createDemoWorkspace(db: DB, cfg: AppConfig = getConfig(), now = new Date()): DemoWorkspace {
-  const userId = createGuestUser(db, now);
-  return db.transaction(() => insertDemoWorkspace(db, userId, cfg, now))();
+  // Guest user + workspace + seed in ONE transaction: a failed seed leaves nothing behind.
+  return db.transaction(() => insertDemoWorkspace(db, createGuestUser(db, now), cfg, now))();
 }
 
 /** Replace an existing demo workspace with a freshly seeded one (same guest). */
@@ -58,7 +58,7 @@ export function deleteExpiredDemos(db: DB, now = new Date()): number {
     "DELETE FROM sessions WHERE kind = 'demo' AND user_id IN (SELECT id FROM users WHERE NOT EXISTS (SELECT 1 FROM workspaces w WHERE w.owner_user_id = users.id AND w.kind = 'demo'))",
   ).run();
   db.prepare(
-    "DELETE FROM users WHERE name = 'Try demo' AND NOT EXISTS (SELECT 1 FROM workspaces w WHERE w.owner_user_id = users.id) AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.user_id = users.id)",
+    "DELETE FROM users WHERE name = 'Try demo' AND NOT EXISTS (SELECT 1 FROM oauth_accounts o WHERE o.user_id = users.id) AND NOT EXISTS (SELECT 1 FROM workspaces w WHERE w.owner_user_id = users.id) AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.user_id = users.id)",
   ).run();
   return removed;
 }

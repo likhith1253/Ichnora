@@ -1,6 +1,7 @@
 import { getConfig } from "@/lib/env";
 import { getDb } from "@/lib/db";
-import { createSession } from "@/lib/auth/sessions";
+import { createSession, revokeSession } from "@/lib/auth/sessions";
+import { readCookie } from "@/lib/auth/cookies";
 import { authCookie } from "@/lib/auth/flow";
 import { sameOrigin } from "@/lib/auth/csrf";
 import { getWorkspace } from "@/lib/auth/accounts";
@@ -42,10 +43,15 @@ export async function POST(req: Request) {
   const db = getDb();
   maybeCleanupDemos(db, cfg);
 
-  const ip = clientIp(req);
+  const ip = clientIp(req, cfg.TRUST_PROXY);
   if (!allowDemoCreation(db, ip, cfg)) {
     return json({ error: "Too many demos have been started from here. Please try again a little later." }, 429);
   }
+
+  // The demo cookie replaces any existing session cookie; revoke that session
+  // server-side so it cannot linger unreferenced for its full lifetime.
+  const previous = readCookie(req, SESSION_COOKIE);
+  if (previous) revokeSession(db, previous);
 
   const demo = createDemoWorkspace(db, cfg);
   recordDemoCreation(db, ip);

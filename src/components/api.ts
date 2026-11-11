@@ -138,7 +138,8 @@ export const identity = {
   signOut: () => mutate<{ ok: boolean }>("/api/auth/signout", { method: "POST" }),
   deleteAccount: () => mutate<{ ok: boolean }>("/api/auth/account", { method: "DELETE" }),
   claim: (workspaceId: string) =>
-    mutate<{ ok: boolean; claimed: boolean }>("/api/auth/claim", { method: "POST", body: JSON.stringify({ workspaceId }) }),
+    // The server requires the claiming browser to present the id it holds.
+    mutate<{ ok: boolean; claimed: boolean }>("/api/auth/claim", { method: "POST", body: JSON.stringify({ workspaceId }), headers: { "x-workspace-id": workspaceId } }),
   providerHref: (provider: string, next: string) => `/api/auth/login?provider=${encodeURIComponent(provider)}&next=${encodeURIComponent(next)}`,
 };
 

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { runTurn, type AgentDeps, type TurnEvent } from "../agent/run";
 import { isValidTimeZone } from "../time/dates";
 import { getConfig } from "../env";
-import { addCredits, consumeTurn } from "../demo/budget";
+import { addCredits, budgetStatus, consumeTurn } from "../demo/budget";
 import { demoPromptTexts, promptKey } from "../demo/prompts";
 import { getCachedDemoAnswer, putCachedDemoAnswer, type DemoAnswer } from "../demo/store";
 import { badRequest, ConversationId } from "./http";
@@ -82,7 +82,11 @@ export function chatHandler(getDeps: () => AgentDeps) {
               const searches = Array.isArray(meta.searchQueries) ? meta.searchQueries.length : 0;
               const pagesRead = typeof meta.pagesRead === "number" ? meta.pagesRead : 0;
               addCredits(deps.db, id.workspaceId, searches + Math.ceil(pagesRead / 5));
-              if (!cached && SUGGESTED.has(promptKey(body.text))) {
+              // Cache only an answer whose context was the shared seed data alone
+              // (this was the demo's FIRST live turn), so one visitor's own
+              // statements can never be replayed to another visitor.
+              const pristine = budgetStatus(deps.db, id.workspaceId, cfg).turnsUsed === 1;
+              if (!cached && pristine && SUGGESTED.has(promptKey(body.text))) {
                 putCachedDemoAnswer(
                   deps.db,
                   body.text,

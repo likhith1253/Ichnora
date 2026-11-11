@@ -1,7 +1,7 @@
 import { getConfig } from "@/lib/env";
 import { getDb } from "@/lib/db";
 import { readCookie } from "@/lib/auth/cookies";
-import { rotateSession } from "@/lib/auth/sessions";
+import { findSession, rotateSession } from "@/lib/auth/sessions";
 import { authCookie } from "@/lib/auth/flow";
 import { sameOrigin } from "@/lib/auth/csrf";
 import { SESSION_COOKIE } from "@/lib/server/identity";
@@ -23,10 +23,12 @@ export async function POST(req: Request) {
 
   const db = getDb();
   const token = readCookie(req, SESSION_COOKIE);
-  const current = token ? rotateSession(db, token) : null;
-  if (!current || current.session.kind !== "demo") {
+  const existing = token ? findSession(db, token) : null;
+  if (!token || !existing || existing.kind !== "demo") {
     return json({ error: "No demo session", demoRequired: true }, 401);
   }
+  const current = rotateSession(db, token);
+  if (!current) return json({ error: "No demo session", demoRequired: true }, 401);
 
   const demo = resetDemoWorkspace(db, current.session.userId, cfg);
   if (!demo) return json({ error: "No demo session", demoRequired: true }, 401);

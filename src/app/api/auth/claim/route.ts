@@ -6,7 +6,7 @@ import { readCookie } from "@/lib/auth/cookies";
 import { findSession } from "@/lib/auth/sessions";
 import { sameOrigin } from "@/lib/auth/csrf";
 import { SESSION_COOKIE } from "@/lib/server/identity";
-import { badRequest, json } from "@/lib/server/http";
+import { badRequest, json, workspaceFrom } from "@/lib/server/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,6 +36,9 @@ export async function POST(req: Request) {
     return badRequest("Body must be JSON");
   }
 
+  // A workspace id is a bearer secret: require the browser that holds it to
+  // present it in the header too, so a leaked id alone cannot be claimed.
+  if (workspaceFrom(req) !== body.workspaceId) return json({ error: "Claim must come from the browser that holds this workspace" }, 403);
   const claimed = claimWorkspace(db, session.userId, body.workspaceId);
   return json({ ok: true, claimed });
 }
