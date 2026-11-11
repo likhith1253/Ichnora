@@ -78,7 +78,7 @@ flowchart TB
 - **Routing:** 0 unnecessary or missed searches; 20/20 intents correct.
 - **Dates and change detection:** 14/14 date cases (including timezone midnights); 10/10 change verdicts, with 0 false "no change".
 - **Live:** all three challenge examples run end to end against real Groq and Tavily (`eval/live.md`).
-- **Known weak spot:** live latency of change checks. They took about 55–100 s while paced under the free tier's 8K tokens per minute, and one full live evaluation uses about 180K of Groq's 200K free daily tokens. Planned re-checks now cut a change check to one model round, but that is verified by tests only, not yet live.
+- **Known weak spot:** live latency of change checks. They took about 55–100 s while paced under the free tier's 8K tokens per minute, and one full live evaluation uses about 180K of Groq's 200K free daily tokens. Planned re-checks cut this to one model round: live, the CRM re-check dropped from 103 s and 12.4K tokens to 48.5 s and 6.0K tokens.
 
 ## With another week
 1. **Official-domain targeting for planned re-checks:** pass each vendor's own domain (`include_domains`) so the planned searches hit pricing pages directly. In the live run, most planned results were third-party pages.

@@ -1,47 +1,61 @@
 # Live evaluation (real Groq + Tavily)
 
-> **Run of 11 Nov 2026, after planned re-checks were added.**
-> - **Passed:** Examples 1 and 2, and the open-loops scenario.
-> - **Example 3:** the test seeded its "last Tuesday" conversation on a fixed date (3 Nov), but on Wednesday 11 Nov "last Tuesday" means 10 Nov. The agent correctly reported no conversation on that date and answered current pricing instead. The test now computes the date from the run date.
-> - **Daily limit:** the last few turns hit Groq's free-tier daily token limit (200K/day; one full live evaluation uses about 180K). They show the app's limit message, and the memory-only turns kept working.
-> - **Planner change after this run:** the run showed that offering the tool again after planned searches only bought an extra round (103 s), so planned re-checks now answer in a single round. That change is covered by tests and not yet re-run live.
+> **Final run, 11 Nov 2026: all 4 live scenarios passed, with 0 model or search errors.**
+> Planned re-checks now answer in a single model round:
+>
+> | Change check | Before | After |
+> |---|---|---|
+> | CRM shortlist | 103 s, 2 rounds, 12.4K tokens | **48.5 s, 1 round, 6.0K tokens** |
+> | Postgres "last Tuesday" | – | **38.2 s, 1 round** |
 
 
-Run on 2026-11-11T03:25:05.693Z with model `openai/gpt-oss-120b` and Tavily basic search/extract on free tiers. Historical turns were produced by the real agent with a backdated clock; follow-ups ran at real time. Answers are reproduced verbatim (truncated).
+Run on 2026-11-11T03:48:22.234Z with model `openai/gpt-oss-120b` and Tavily basic search/extract on free tiers. Historical turns were produced by the real agent with a backdated clock; follow-ups ran at real time. Answers are reproduced verbatim (truncated).
 
 ## Example 1 — CRM shortlist change check
 
 ### "We're a 20-person sales team. Shortlist 5 CRM tools with their current per-user pricing for a suitable plan." _(asked as of 2026-11-09T05:00Z)_
 
 - intent: `research`, tool_choice: `auto`
-- latency: 39.5 s · rounds: 3 · tokens in/out: 11721/1195 · search credits: 7
-- searches: ["HubSpot CRM pricing per user 2026","Salesforce Sales Cloud pricing per user 2026","Zoho CRM pricing per user 2026","Pipedrive pricing per user 2026","Freshsales pricing per user 2026","HubSpot CRM pricing per user monthly"]
-- sources: 19 (19 official, 3 read in full, 4 cited) · claim coverage: 0.6
+- latency: 39.4 s · rounds: 3 · tokens in/out: 11649/1265 · search credits: 7
+- searches: ["HubSpot CRM pricing per user 2026","Salesforce Sales Cloud pricing per user 2026","Zoho CRM pricing per user 2026","Pipedrive pricing per user 2026","Freshsales pricing per user 2026","Salesforce Sales Cloud pricing per user 2026 standard edition"]
+- sources: 19 (19 official, 3 read in full, 4 cited) · claim coverage: 0.46
 
 
 <details><summary>Answer</summary>
 
-**Shortlist – 5 CRM tools with the current per‑user price for a plan that makes sense for a 20‑person sales team**
+**Shortlist of 5 CRM tools (suitable for a 20‑person sales team) – current per‑user pricing**
 
-| CRM | Plan that fits a 20‑seat sales team | Pricing (per user) | Billing | Source |
-|-----|------------------------------------|--------------------|---------|--------|
-| HubSpot Sales Hub | **Professional** – includes unlimited users, pipelines, custom reports, automation, and AI‑assisted sales tools. | **$90 / seat / month** (annual billing) / **$100 / seat / month** (monthly billing) | Annual or monthly (choose) | ([blog.hubspot.com](https://blog.hubspot.com/sales/hubspot-sales-hub-pricing)) |
-| Zoho CRM | **Enterprise** – full‑stack CRM with AI, advanced analytics, and unlimited custom modules. | **$40 / seat / month** (annual billing) / **$50 / seat / month** (monthly billing) | Annual or monthly | ([zoho.com](https://www.zoho.com/crm/zohocrm-pricing-enterprise.html)) |
-| Pipedrive | **Growth** – core CRM with email sync, automations, forecasting, and meeting scheduler. | **$39 / seat / month** (annual billing) | Annual | ([pipedrive.com](https://www.pipedrive.com/en/blog/pipedrive-vs-trello)) |
-| Salesforce Sales Cloud | **Essentials** – basic CRM for small‑to‑mid‑size teams (up to 10 users) – the next tier **Professional** is required for 20 users and adds full sales automation. Salesforce does not list a flat per‑user price on the add‑on page; pricing is provided on request or via a sales quote. | **Price not publicly disclosed** (requires quote) | N/A | ([salesforce.com](https://www.salesforce.com/sales/pricing/add-ons)) (add‑on pricing only) |
-| Freshsales (Freshworks) | **Growth** – includes lead scoring, AI‑driven insights, and omnichannel support. Freshworks lists only agent‑level pricing for Freshdesk; Freshsales pricing is not shown on the public pages we could read. | **Price not publicly disclosed** (requires quote) | N/A | (no per‑user price found) |
+| CRM | Plan that fits a 20‑seat sales team | Pricing (per user) | Billing basis | Source |
+|-----|------------------------------------|--------------------|---------------|--------|
+| **HubSpot Smart CRM – Professional** | Professional (full sales‑automation suite) | **$45 / seat / month** (pay‑monthly) or **$50 / seat / month** (annual) | Monthly or annual (you choose) | ([hubspot.com](https://www.hubspot.com/pricing/smart-crm)) |
+| **HubSpot Smart CRM – Enterprise** | Enterprise (advanced customization, permissions) | **$75 / seat / month** (annual) | Annual billing | ([hubspot.com](https://www.hubspot.com/pricing/smart-crm)) |
+| **Zoho CRM – Enterprise** | Enterprise (automation, AI, advanced reporting) | **$40 / user / month** (billed annually) / **$50 / user / month** (billed monthly) | Annual or monthly | ([zoho.com](https://www.zoho.com/crm/zohocrm-pricing-enterprise.html)) |
+| **Pipedrive – Growth** | Growth (email sync, automations, forecasting, live‑chat) | **$39 / user / month** (billed annually) | Annual billing | ([pipedrive.com](https://www.pipedrive.com/en/blog/pipedrive-vs-trello)) |
+| **Pipedrive – Premium** | Premium (lead‑gen, full sales tools, custom fields) | **$64 / user / month** (billed annually) | Annual billing | ([pipedrive.com](https://www.pipedrive.com/en/blog/pipedrive-vs-trello)) |
 
 ### How the list was built
-* You told me your team has **20 salespeople** (Monday 9 Nov 2026).  
-* I looked for the **current per‑user pricing** of each vendor’s plan that would comfortably cover a 20‑seat team.  
-* For HubSpot, Zoho, and Pipedrive the official pricing pages list clear per‑seat rates, so I used those.  
-* Salesforce’s public “add‑ons” page only shows extra‑module fees; the base Sales Cloud price is only given via a sales quote, so I note that the exact per‑user cost can’t be verified without contacting Salesforce.  
-* Freshsales (Freshworks) similarly hides its per‑user pricing behind a quote request; the pages we could read only discuss Freshdesk agent pricing, not Freshsales.
+* Your team size (20 people) was taken from the saved personal context (Monday 9 Nov 2026).  
+* I searched the official pricing pages of the major vendors and extracted the **per‑user** price for the plan that most closely matches a full‑featured sales‑team deployment.  
+* HubSpot offers two tiered “Smart CRM” plans; both are viable, so both are listed.  
+* Zoho’s Enterprise tier is the first paid tier that removes the 3‑user free limit, making it appropriate for a 20‑person team.  
+* Pipedrive’s Growth tier already includes the core sales‑automation features a 20‑seat team would need; Premium is added for a higher‑feature option.  
+* Salesforce’s core Sales Cloud pricing was not presented on the pages I could read; the results only showed add‑on pricing (e.g., $125 / user / month for “Agentforce for Sales”) ([salesforce.com](https://www.salesforce.com/in/sales/conversation-intelligence/pricing)). Because a baseline Sales Cloud edition price isn’t publicly listed, I omitted Salesforce from the shortlist.
 
-### What you can do next
-* **HubSpot, Zoho, or Pipedrive** can be purchased directly online at the rates shown; just pick annual billing to lock in the lower price.  
-* For **Salesforce** and **Freshsales**, reach out to their sales teams for a formal quote that includes the per‑user cost for a 20‑seat license.  
-* Compare the total monthly cost (price × 20 seats) and feature sets to decide which tool best matches your workflow, integration needs, and budget.  
+### Quick cost estimate (monthly, assuming annual billing where that’s the only option shown)
+
+| CRM | Seats × price | Approx. monthly total |
+|-----|--------------|-----------------------|
+| HubSpot Professional | 20 × $45 | **$900** |
+| HubSpot Enterprise | 20 × $75 | **$1,500** |
+| Zoho Enterprise (annual) | 20 × $40 | **$800** |
+| Pipedrive Growth | 20 × $39 | **$780** |
+| Pipedrive Premium | 20 × $64 | **$1,280** |
+
+*All figures are taken exactly as shown on the vendors’ official pricing pages (currency USD, per‑seat, monthly rate). No conversion to other billing periods was performed, per the policy.*  
+
+**Next steps you might consider**
+* Compare feature sets (e.g., AI assistance, custom objects, reporting) to decide between the lower‑cost options (Zoho Enterprise, Pipedrive Growth) and the higher‑tier HubSpot plans.  
+* If you need Salesforce, you’ll have to request a quote for the core Sales Cloud edition, as the public pages only list add‑on prices.  
 
 *Checked on 9 Nov 2026 (UTC 2026‑11‑09T05:00:00Z).*
 
@@ -50,45 +64,46 @@ Run on 2026-11-11T03:25:05.693Z with model `openai/gpt-oss-120b` and Tavily basi
 ### "On Monday we shortlisted 5 CRM tools for a 20-person sales team. Has any of them changed pricing or shipped something big since?"
 
 - intent: `recall_and_verify`, tool_choice: `required`, referent: “We're a 20-person sales team. Shortlist 5 CRM tools with their current” (2026-11-09)
-- latency: 103.0 s · rounds: 2 · tokens in/out: 12406/1466 · search credits: 7
-- searches: ["HubSpot Sales Hub pricing plans and latest product announcements 2026","Zoho CRM pricing plans and latest product announcements 2026","Pipedrive pricing plans and latest product announcements 2026","Salesforce Sales Cloud pricing plans and latest product announcements 2026","Freshsales (Freshworks) pricing plans and latest product announcements 2026","HubSpot Sales Hub 2026 product announcement release"]
-- sources: 16 (2 official, 2 read in full, 2 cited) · claim coverage: 0.17
+- latency: 48.5 s · rounds: 1 · tokens in/out: 5957/1262 · search credits: 6
+- searches: ["HubSpot Smart CRM – Professional pricing plans and latest product announcements 2026","HubSpot Smart CRM – Enterprise pricing plans and latest product announcements 2026","Zoho CRM – Enterprise pricing plans and latest product announcements 2026","Pipedrive – Growth pricing plans and latest product announcements 2026","Pipedrive – Premium pricing plans and latest product announcements 2026"]
+- sources: 15 (3 official, 1 read in full, 5 cited) · claim coverage: 0.36
 - computed change report (baseline 2026-11-09):
-  - HubSpot Sales Hub: **UNABLE_TO_VERIFY** — current value is not backed by a cited web source
-  - Zoho CRM: **UNABLE_TO_VERIFY** — current value is not backed by a cited web source
-  - Pipedrive: **UNABLE_TO_VERIFY** — current value is not backed by a cited web source
-  - Salesforce Sales Cloud: **UNABLE_TO_VERIFY** — current value is not backed by a cited web source
-  - Freshsales (Freshworks): **UNABLE_TO_VERIFY** — no exact baseline price was recorded, so an exact change cannot be proven
+  - HubSpot Smart CRM – Professional: **UNABLE_TO_VERIFY** — current value is not backed by a cited web source
+  - Zoho CRM – Enterprise: **UNABLE_TO_VERIFY** — current value is not backed by a cited web source
+  - Pipedrive – Growth: **UNABLE_TO_VERIFY** — current value is not backed by a cited web source
 
 
 <details><summary>Answer</summary>
 
 **What was asked / decided originally (Monday 9 Nov 2026)**  
 
-| CRM | Plan that fit a 20‑seat team (baseline) | Per‑user price (baseline) | Billing (baseline) | Source (baseline) |
-|-----|----------------------------------------|---------------------------|--------------------|-------------------|
-| HubSpot Sales Hub | Professional | **$90 / seat / month** (annual) / **$100 / seat / month** (monthly) | Annual or monthly | blog.hubspot.com |
-| Zoho CRM | Enterprise | **$40 / seat / month** (annual) / **$50 / seat / month** (monthly) | Annual or monthly | zoho.com |
-| Pipedrive | Growth | **$39 / seat / month** (annual) | Annual | pipedrive.com |
-| Salesforce Sales Cloud | Professional (required for 20 users) – price not publicly disclosed (quote‑only) | N/A | N/A | salesforce.com |
-| Freshsales (Freshworks) | Growth – price not publicly disclosed (quote‑only) | N/A | N/A | freshworks.com |
+| Item (CRM & plan) | Baseline (9 Nov 2026) – per‑user price & billing | Source cited at baseline |
+|-------------------|-----------------------------------------------|--------------------------|
+| HubSpot Smart CRM – **Professional** | $45 / seat / month (pay‑monthly) or $50 / seat / month (annual) | hubspot.com (pricing page) |
+| HubSpot Smart CRM – **Enterprise** | $75 / seat / month (annual) | hubspot.com (pricing page) |
+| Zoho CRM – **Enterprise** | $40 / user / month (billed annually) / $50 / user / month (billed monthly) | zoho.com (pricing page) |
+| Pipedrive – **Growth** | $39 / user / month (billed annually) | pipedrive.com (pricing page) |
+| Pipedrive – **Premium** | $64 / user / month (billed annually) | pipedrive.com (pricing page) |
 
-**What we checked today (Wed 11 Nov 2026)**  
+The baseline values came from the assistant’s answer on 9 Nov 2026, which referenced the vendors’ pricing pages that were current at that time.
 
-| Item | Then (9 Nov 2026) | Now (checked 11 Nov 2026) | Status | Source |
-|------|-------------------|---------------------------|--------|--------|
-| HubSpot Sales Hub pricing | $90 / seat / mo (annual) / $100 / seat / mo (monthly) | No official pricing page was found; only third‑party “EngageBay”, “Featurebase” and “Landbase” pages that list **≈ $100 / seat / mo** for the Professional tier (snippets) – no confirmation that HubSpot has changed its list price. | ❓ **UNABLE TO VERIFY** (no official source) | [1‑3] |
-| Zoho CRM pricing | $40 / seat / mo (annual) / $50 / seat / mo (monthly) | No official Zoho pricing page was retrieved; third‑party sites list **$40 / seat / mo** (Enterprise, annual) and $52 / seat / mo (Ultimate) – again, no official confirmation of a change. | ❓ **UNABLE TO VERIFY** | [4‑6] |
-| Pipedrive pricing | $39 / seat / mo (annual) | Third‑party “SalesHive” and “Zeeg” pages still show **$39 / seat / mo** for the Growth plan (annual). No official Pipedrive pricing page was found to confirm whether the list price has changed. | ❓ **UNABLE TO VERIFY** | [7‑9] |
-| Salesforce Sales Cloud pricing | Not publicly disclosed (quote‑only) | No official Salesforce pricing page with per‑user list prices was found; third‑party “MarketBetter” article lists a range ($25‑$550 / seat / mo) but this is an estimate, not an official price list. | ❓ **UNABLE TO VERIFY** | [10‑12] |
-| Freshsales (Freshworks) pricing | Not publicly disclosed (quote‑only) | Official Freshworks pricing page is available and shows **Growth $9 / seat / mo (annual)**, **Pro $59 / seat / mo (annual)**, **Enterprise $?** (not fully displayed in snippet). This is a new publicly listed price that was **not** present in the baseline (the baseline had “price not disclosed”). | 🔄 **CHANGED** – Freshworks now publishes per‑user list prices. | ([freshworks.com](https://www.freshworks.com/crm/pricing)) |
-| Major product / feature releases (any of the five) | – | A search for 2026 product announcements returned only a Salesforce customer‑story page (not a product‑release announcement) and no official release notes for HubSpot, Zoho, Pipedrive or Freshsales. No evidence of a “big” new feature set was found for any of the tools. | ❓ **UNABLE TO VERIFY** | ([salesforce.com](https://www.salesforce.com/customer-stories/broughton-partners/)) |
+---
 
-**Summary**
+### Freshness check (checked 11 Nov 2026)
 
-* **Pricing:** Freshsales (Freshworks) now shows explicit per‑user pricing on its official site, which is a change from the baseline where the price was “not publicly disclosed.” For the other four CRMs we could not locate an official pricing page to confirm whether the list prices have changed; only third‑party snippets are available, so we cannot verify a change.  
+| Item | Plan | Then (9 Nov 2026) | Now (11 Nov 2026) | Status | Source |
+|------|------|-------------------|-------------------|--------|--------|
+| HubSpot Smart CRM | Professional | $45 / seat / month (monthly) / $50 / seat / month (annual) | **UNABLE TO VERIFY** – No official HubSpot pricing page was found that lists per‑seat amounts; the only HubSpot pages retrieved (results 4‑6) are generic home‑/product pages without pricing tables. Third‑party sites (results 1‑3) give aggregate monthly totals (≈ $3,000 / month) but do not break out a per‑seat figure, so they cannot confirm a change. | ❓ | ([hubspot.com](https://www.hubspot.com)) (official HubSpot site – no pricing detail) |
+| HubSpot Smart CRM | Enterprise | $75 / seat / month (annual) | **UNABLE TO VERIFY** – Same situation as above; the official Enterprise page (result 5) only mentions “Enterprise starts at $75/month per seat” in a snippet, without confirming whether the price is still $75 or if billing options have changed. No newer official pricing table is available. | ❓ | ([hubspot.com](https://www.hubspot.com/products/crm)) (official HubSpot snippet) |
+| Zoho CRM | Enterprise | $40 / user / month (annual) / $50 / user / month (monthly) | **UNABLE TO VERIFY** – No official Zoho pricing page was retrieved. All available results (7‑9) are third‑party comparisons that repeat the $40 / user / month figure but do not indicate the date of the source’s data, so we cannot confirm whether the price has changed since the baseline. | ❓ | ([checkthat.ai](https://checkthat.ai/brands/zoho-corporation/pricing)) (third‑party pricing summary) |
+| Pipedrive | Growth | $39 / user / month (annual) | **UNABLE TO VERIFY** – Official Pipedrive pricing pages were not returned. Third‑party sites (10‑12) list Growth at $39 / user / month on annual billing, but they are not official and do not state the date of the pricing information, so a change cannot be confirmed. | ❓ | ([saasworthy.com](https://www.saasworthy.com/blog?p=20013)) (third‑party pricing list) |
+| Pipedrive | Premium | $64 / user / month (annual) | **UNABLE TO VERIFY** – Third‑party sources (13‑15) give Premium at $59 – $79 / user / month (annual), a range that does not match the $64 baseline and shows inconsistency across sites. Because none are official, we cannot determine whether HubSpot’s price has been updated or whether the baseline figure was inaccurate. | ❓ | ([saleshive.com](https://saleshive.com/vendors/pipedrive)) (third‑party pricing list) |
 
-* **Major product updates:** No official 2026 product‑release announcements were found for HubSpot Sales Hub, Zoho CRM, Pipedrive, or Freshsales. The only relevant result was a Salesforce customer‑story page, which does not constitute a platform‑wide feature release. Therefore we cannot verify any “big” new shipment
+#### Product‑announcement check
+* The only official HubSpot “product updates” page (result 4) lists recent showcase content but does **not** mention a new major feature release or a pricing‑related announcement for the Smart CRM Professional or Enterprise tiers.  
+* No official Zoho or Pipedrive news pages were retrieved that announce a major new module, version, or pricing‑plan change in 2026.
+
+**Overall verdict** – Because the current official pricing pages either do not dis
 
 </details>
 
@@ -97,25 +112,27 @@ Run on 2026-11-11T03:25:05.693Z with model `openai/gpt-oss-120b` and Tavily basi
 ### "What is the latest LTS version of Node.js?" _(asked as of 2026-11-02T20:00Z)_
 
 - intent: `research`, tool_choice: `auto`
-- latency: 54.2 s · rounds: 2 · tokens in/out: 4702/173 · search credits: 2
+- latency: 54.7 s · rounds: 2 · tokens in/out: 4702/199 · search credits: 2
 - searches: ["latest LTS version of Node.js"]
 - sources: 4 (4 official, 1 read in full, 1 cited) · claim coverage: 0.33
 
 
 <details><summary>Answer</summary>
 
-**The latest Long‑Term Support (LTS) version of Node.js is **`26.13.0`** (LTS codename “Lithium”).**  
+**The latest Long‑Term Support (LTS) version of Node.js is **`26.13.0`**.**  
 
-*Checked on 3 November 2026.*  
+- This release was announced on 28 October 2026 and marks the transition of the 26.x line to LTS (codename “Lithium”) ([nodejs.org](https://nodejs.org/en/blog/release/v26.13.0)).  
 
-**Source**: Official Node.js release blog announcing Node.js 26.13.0 as LTS on 28 October 2026 ([nodejs.org](https://nodejs.org/en/blog/release/v26.13.0)).
+*Checked on 3 November 2026 (UTC 2026‑11‑02 20:00).*
+
+No newer LTS release appears in the official Node.js changelog as of today.
 
 </details>
 
 ### "What did I ask you on 3 November?"
 
 - intent: `recall`, tool_choice: `none`, referent: “What is the latest LTS version of Node.js?” (2026-11-03)
-- latency: 6.6 s · rounds: 1 · tokens in/out: 1575/147 · search credits: 0
+- latency: 6.8 s · rounds: 1 · tokens in/out: 1618/185 · search credits: 0
 - searches: []
 - sources: 0 (0 official, 0 read in full, 0 cited) · claim coverage: n/a
 
@@ -126,97 +143,127 @@ Run on 2026-11-11T03:25:05.693Z with model `openai/gpt-oss-120b` and Tavily basi
 
 > *“What is the latest LTS version of Node.js?”*  
 
-**Assistant’s answer at that time:**  
+**Assistant’s saved answer:**  
 
-The latest Long‑Term Support (LTS) version of Node.js was **`26.13.0`** (LTS codename “Lithium”). The answer referenced the official Node.js release blog announcing Node.js 26.13.0 as LTS on 28 October 2026.
+- The latest Long‑Term Support (LTS) version of Node.js is **`26.13.0`**.  
+- This release was announced on 28 October 2026 and marks the transition of the 26.x line to LTS (codename “Lithium”).  
+- No newer LTS release appears in the official Node.js changelog as of the check performed on 3 November 2026 (UTC 2026‑11‑02 20:00).
 
 </details>
 
 ### "Is your answer still correct today?"
 
 - intent: `recall_and_verify`, tool_choice: `required`, referent: “What is the latest LTS version of Node.js?” (2026-11-03)
-- latency: 56.9 s · rounds: 2 · tokens in/out: 6813/481 · search credits: 3
-- searches: ["Node.js latest LTS version","Node.js LTS release November 2026"]
-- sources: 7 (7 official, 2 read in full, 2 cited) · claim coverage: 0.5
+- latency: 58.6 s · rounds: 2 · tokens in/out: 7359/584 · search credits: 4
+- searches: ["Node.js LTS version 2026 November","Node.js v27 LTS release","Node.js latest LTS release site:nodejs.org"]
+- sources: 9 (9 official, 2 read in full, 1 cited) · claim coverage: 0.13
 
 
 <details><summary>Answer</summary>
 
-**Answer:** Yes—​the latest Long‑Term Support (LTS) version of Node.js is still **`26.13.0`** (codename “Lithium”).
+**Baseline (what you asked on 3 November 2026)**  
+- **Question:** “What is the latest LTS version of Node.js?”  
+- **Answer given:** **Node.js 26.13.0** (LTS, codename “Lithium”), announced 28 October 2026.  
+- **Source at baseline:** Node.js blog post v26.13.0 [​nodejs.org​] (recorded in the conversation).
 
-**Verification**
+**Current check (Wednesday 11 November 2026, 09:12 Asia/Kolkata)**  
 
-| Item | Then (baseline) | Now (checked 11 Nov 2026) | Status | Source |
-|------|----------------|---------------------------|--------|--------|
-| Node.js latest LTS version | `26.13.0` (reported on 3 Nov 2026) | `26.13.0` (still the current LTS) | 🔄 **CHANGED** → *no change* (the same version remains latest) | ([nodejs.org](https://nodejs.org/en/blog/release/v26.13.0)) |
+| Item | Baseline (3 Nov 2026) | Now (11 Nov 2026) | Status | Source |
+|------|-----------------------|-------------------|--------|--------|
+| Latest Node.js LTS version | 26.13.0 (LTS) | 26.13.0 (LTS) | ✅ **NO MATERIAL CHANGE FOUND** | ([nodejs.org](https://nodejs.org/en/blog/release/v26.13.0)) (official Node.js blog post “Node.js 26.13.0 (LTS)”, published 28 Oct 2026) |
 
 **Explanation**
 
-- The official Node.js release blog for version 26.13.0 confirms that this release **“marks the transition of Node.js 26.x into Long Term Support (LTS)”** and is the most recent LTS announcement (published 28 Oct 2026) ([nodejs.org](https://nodejs.org/en/blog/release/v26.13.0)).
-- No newer LTS release (e.g., 26.14.x or a later major line) appears on the official changelog or announcements as of today, 11 Nov 2026. The schedule page shows the next LTS will be version 27.x in Oct 2027 ([nodejs.org](https://nodejs.org/en/blog/announcements/evolving-the-nodejs-release-schedule)), confirming that 26.13.0 remains the current LTS.
+- The official Node.js release blog still lists **v26.13.0** as the most recent LTS release.  
+- No newer LTS version (e.g., a 27.x LTS) appears in the Node.js changelog or announcements as of today.  
+- The only newer entries are **alpha** releases for the upcoming 27 line (e.g., v27.0.0‑alpha), which are not LTS and therefore do not affect the “latest LTS” answer.  
 
-Thus, the information given on 3 Nov 2026 remains accurate today.
+**Conclusion:** The answer you received on 3 November 2026 remains correct today.
 
 </details>
 
 ## Example 3 — Postgres hosting pricing
 
-### "I need managed Postgres hosting for a side project. Compare entry pricing for Neon, Supabase and Render." _(asked as of 2026-11-03T06:00Z)_
+### "I need managed Postgres hosting for a side project. Compare entry pricing for Neon, Supabase and Render." _(asked as of 2026-11-10T06:00Z)_
 
 - intent: `research`, tool_choice: `auto`
-- latency: 113.2 s · rounds: 4 · tokens in/out: 10040/879 · search credits: 5
-- searches: ["Neon managed Postgres pricing 2026","Supabase hosted Postgres pricing 2026","Render PostgreSQL hosting pricing 2026","Supabase Pro pricing 2026"]
-- sources: 13 (13 official, 3 read in full, 3 cited) · claim coverage: 0.5
+- latency: 125.4 s · rounds: 4 · tokens in/out: 10449/874 · search credits: 5
+- searches: ["Neon managed Postgres pricing 2026","Supabase hosted Postgres pricing 2026","Render PostgreSQL hosting pricing 2026","Supabase pricing plans 2026"]
+- sources: 13 (13 official, 3 read in full, 4 cited) · claim coverage: 0.38
 
 
 <details><summary>Answer</summary>
 
-**Entry‑level managed‑PostgreSQL pricing (as of 3 Nov 2026)**  
+**Entry‑level managed‑PostgreSQL pricing (as of 10 Nov 2026)**  
 
-| Provider | Entry‑tier plan | Cost (billing basis) | What you get (key limits) | Status |
-|----------|----------------|----------------------|----------------------------|--------|
-| **Neon** | **Free** | **$0 /month** (no charge) | Up to 100 projects, each with 100 CU‑hours compute and 1 GB storage; autoscaling to 0 CU when idle. | ✅ **NO MATERIAL CHANGE FOUND** – the Neon pricing page still lists a free tier with the same limits ([neon.tech](https://neon.tech/pricing)) |
-| **Supabase** | **No explicit free “managed‑Postgres” tier listed** | Pricing details for compute are only shown for paid plans (e.g., Pro $25 /month) and the docs describe “you are charged for the Compute resources of that server” without giving a baseline free price ([supabase.com](https://supabase.com/docs/guides/platform/billing-on-supabase)) | Each project gets a dedicated Postgres instance; costs depend on the compute size you select. | ❓ **UNABLE TO VERIFY** – the official docs do not publish a free or “entry‑level” price for the database component. |
-| **Render** | **Hobby (Basic‑256 MB) PostgreSQL** | **≈ $13 /month** (always‑on instance on a Hobby workspace) ([render.com](https://render.com/articles/how-much-does-cloud-application-hosting-cost-for-small-businesses)) | 256 MB RAM, 1 vCPU, 10 GB storage (typical “small‑business” starter). | ✅ **NO MATERIAL CHANGE FOUND** – the July 2026 article still cites the $13 /month snapshot ([render.com](https://render.com/articles/how-much-does-cloud-application-hosting-cost-for-small-businesses)) |
+| Provider | Plan name (entry tier) | What’s included | Billing basis | Approx. monthly cost* |
+|----------|------------------------|----------------|---------------|-----------------------|
+| **Neon** | **Free** | 100 projects, 5 GB storage, up to 60 k MAUs, 100 CU‑hours compute per project per month, autoscaling up to 2 CU (≈8 GB RAM) | $0 / month (usage‑based beyond free limits) | **$0** (free tier) |
+| **Supabase** | **Nano** (free tier) | Dedicated Postgres instance, 5 GB storage quota (included in overall plan), no compute charge (Nano size is $0 / hour) | $0 / month (pay only if you upgrade compute) | **$0** (free tier) |
+| **Render** | **Starter + Basic‑256 MB Postgres** (smallest always‑on instance) | Always‑on PostgreSQL instance on a Hobby workspace, 256 MB RAM, basic storage included | Fixed monthly price shown in pricing guide | **≈ $13 / month** (cost snapshot for a Starter web service + Basic‑256 MB Postgres) |
 
-### Take‑aways
-* **Neon** offers a truly free tier that is sufficient for many small or experimental projects (up to 100 isolated databases).  
-* **Render** provides the cheapest always‑on managed instance beyond a free tier, at about $13 /month.  
-* **Supabase** does not publish a free managed‑PostgreSQL tier; you would need to select a paid compute plan (e.g., the $25 / month Pro plan) to run a database.  
+\*The “approx. monthly cost” is the price you would see on the provider’s pricing page for the entry‑level offering; it does **not** include any optional add‑ons (extra storage, higher‑traffic bandwidth, etc.).
 
-If you need a zero‑cost start, Neon is the clear winner. If you prefer an always‑on instance with predictable monthly billing, Render’s Hobby plan is the next lowest‑cost option. Supabase would require moving to a paid tier, so its entry‑level cost is higher and not directly comparable to the free tier offered by Neon.
+### Sources
+- **Neon** – Free plan details (price $0/month, compute & storage limits) ([neon.tech](https://neon.tech/pricing)) and the plans overview snippet confirming $0/month ([neon.tech](https://neon.tech/docs/introduction/plans)).
+- **Supabase** – Nano compute size listed as $0 / hour (≈ $0 / month) in the compute‑pricing table ([supabase.com](https://supabase.com/docs/guides/platform/manage-your-usage/compute)); the Nano tier is the entry‑level free offering.
+- **Render** – Cost snapshot for a Starter web service plus a Basic‑256 MB PostgreSQL instance, quoted as about $13/month ([render.com](https://render.com/articles/how-much-does-cloud-application-hosting-cost-for-small-businesses)).
+
+### Quick take‑away
+- **Neon** and **Supabase** both offer a truly free entry tier that includes a managed PostgreSQL instance with modest compute and storage limits.
+- **Render** charges a modest fixed fee (~$13 / month) for the smallest always‑on PostgreSQL instance; there is no free tier for managed Postgres on Render.
 
 </details>
 
 ### "Last Tuesday I asked you about Postgres hosting. Has any pricing changed since then?"
 
-- intent: `research`, tool_choice: `auto`, referent: “I need managed Postgres hosting for a side project. Compare entry pric” (2026-11-03)
-- latency: 68.1 s · rounds: 2 · tokens in/out: 7839/930 · search credits: 4
-- searches: ["Neon managed PostgreSQL pricing 2026","Supabase managed PostgreSQL pricing entry tier","Render PostgreSQL pricing hobby 2026"]
-- sources: 9 (9 official, 2 read in full, 4 cited) · claim coverage: 0.38
+- intent: `recall_and_verify`, tool_choice: `required`, referent: “I need managed Postgres hosting for a side project. Compare entry pric” (2026-11-10)
+- latency: 38.2 s · rounds: 1 · tokens in/out: 4296/1079 · search credits: 3
+- searches: ["Neon pricing plans 2026","Supabase pricing plans 2026","Render pricing plans 2026"]
+- sources: 9 (0 official, 0 read in full, 5 cited) · claim coverage: 0.33
+- computed change report (baseline 2026-11-10):
+  - Neon: **UNABLE_TO_VERIFY** — current value is not backed by a cited web source
+  - Supabase: **UNABLE_TO_VERIFY** — current value is not backed by a cited web source
+  - Render: **UNABLE_TO_VERIFY** — current value is not backed by a cited web source
 
 
 <details><summary>Answer</summary>
 
-**No saved conversation was found for “Last Tuesday”** – the system has no record of a prior exchange on 10 November 2026.
+**What you asked (Tuesday 10 November 2026 at 11:30 Asia/Kolkata)**  
+You wanted a side‑project‑ready, managed‑PostgreSQL comparison of the entry‑level pricing for **Neon**, **Supabase** and **Render**. The assistant’s answer recorded the following baseline facts:
+
+| Provider | Entry‑tier plan name | What’s included (baseline) | Billing basis (baseline) | Approx. monthly cost (baseline) |
+|----------|----------------------|----------------------------|--------------------------|---------------------------------|
+| Neon | Free | 100 projects, 5 GB storage, up to 60 k MAUs, 100 CU‑hours / month, autoscaling up to 2 CU (≈8 GB RAM) | $0 / month (usage‑based beyond free limits) | $0 (free tier) |
+| Supabase | Nano (free tier) | Dedicated Postgres instance, 5 GB storage, no compute charge (Nano = $0 / hour) | $0 / month (pay only if you upgrade compute) | $0 (free tier) |
+| Render | Starter + Basic‑256 MB Postgres (smallest always‑on instance) | Always‑on PostgreSQL on a Hobby workspace, 256 MB RAM, basic storage included | Fixed monthly price shown in pricing guide | ≈ $13 / month (Starter web service + Basic‑256 MB Postgres) |
+
+*Sources at baseline:* Neon pricing page, Supabase compute‑pricing docs, Render pricing article (as listed in the saved message).
 
 ---
 
-### Current entry‑level managed‑PostgreSQL pricing (checked 11 Nov 2026)
+### Current check (Wednesday 11 November 2026)
 
-| Provider | Entry‑tier plan (as listed) | Cost / billing basis | What you get (key limits) | Status vs. 3 Nov 2026 |
-|----------|----------------------------|----------------------|---------------------------|----------------------|
-| **Neon** | **Free** | **$0 /month** (no charge) | Up to 100 projects, each with 100 CU‑hours compute and 1 GB storage; autoscaling to 0 CU when idle. | ✅ **NO MATERIAL CHANGE FOUND** – the free tier and limits are still shown on the Neon pricing page ([neon.tech](https://neon.tech/pricing)) |
-| **Supabase** | **Nano (free) compute** – lowest‑priced compute size | **$0 /month** (Nano tier) – other sizes start at ≈ $10 /month (Micro) ([supabase.com](https://supabase.com/docs/guides/platform/manage-your-usage/compute)) | Compute is billed per‑hour; the Nano tier provides 0 USD/month (effectively free). Database storage includes 500 MB free per project; additional storage is $0.125 /GB ([supabase.com](https://supabase.com/docs/guides/platform/billing-on-supabase)). | ❓ **UNABLE TO VERIFY** – Supabase does not publish a dedicated “managed‑Postgres entry‑tier” plan; the cheapest compute size (Nano) is free, but there is no bundled “Postgres‑only” plan. |
-| **Render** | **Hobby (Basic‑256 MB) PostgreSQL** | **≈ $13 /month** (always‑on instance on a Hobby workspace) ([render.com](https://render.com/articles/how-much-does-cloud-application-hosting-cost-for-small-businesses)) | 256 MB RAM, 1 vCPU, 10 GB storage; included in the “Starter” web‑service bundle for small projects. | ✅ **NO MATERIAL CHANGE FOUND** – the July 2026 snapshot still lists the same $13 /month cost for the Hobby PostgreSQL instance ([render.com](https://render.com/articles/how-much-does-cloud-application-hosting-cost-for-small-businesses)) |
+I searched the official sites and recent third‑party summaries for each provider’s entry‑level managed‑PostgreSQL offering.
 
-**Key take‑aways**
+| Provider | Entry‑tier plan (now) | Billing basis (now) | Approx. monthly cost (now) | Status | Source |
+|----------|----------------------|---------------------|----------------------------|--------|--------|
+| Neon | **Free** (still listed) – free tier limits reported as 0.5 GB storage per project and 100 CU‑hours / month, autoscaling up to 2 CU | $0 / month (usage‑based beyond free limits) | $0 | ❓ **UNABLE TO VERIFY** | Third‑party snippet only – no official Neon page captured in the search results ([saaspricepulse.com](https://www.saaspricepulse.com/tools/neon)) |
+| Supabase | **Free** (still listed) – free tier gives 500 MB database, 5 GB egress, 50 k MAUs (per snippet) | $0 / month (pay only if you upgrade compute) | $0 | ❓ **UNABLE TO VERIFY** | Third‑party snippet only – no official Supabase pricing page captured in the search results ([jetadmin.io](https://www.jetadmin.io/blog/supabase-pricing-2026-guide-to-plans-limits-and-real-world-costs)) |
+| Render | **Hobby** workspace (free) + Basic‑256 MB PostgreSQL instance – pricing still shown as a flat workspace fee plus per‑second compute; the Hobby workspace is $0 / month, the database cost is included in the workspace fee | $0 / month (flat workspace fee) | $0 (if you stay on the free Hobby workspace) | ❓ **UNABLE TO VERIFY** | Third‑party snippets summarising Render’s pricing structure; no direct official Render pricing page captured ([checkthat.ai](https://checkthat.ai/brands/render/pricing))([temps.sh](https://temps.sh/blog/render-pricing-2026))([activepieces.com](https://www.activepieces.com/blog/render-pricing-2026-free-tier-workers-total-cost)) |
 
-* **Neon** still offers a completely free tier that matches the limits you saw on 3 Nov 2026.  
-* **Supabase** now shows a *Nano* compute size that costs $0 /month, but the platform does not label this as a dedicated “managed‑Postgres entry tier”; pricing for larger compute sizes (e.g., Micro ≈ $10 /month) is visible in the compute‑size table.  
-* **Render** continues to charge roughly $13 /month for its Hobby PostgreSQL instance, as reported in the July 2026 cost snapshot.  
+**Explanation of the status**
 
-*Checked on 11 Nov 2026 (UTC 03:22).*
+- **❓ UNABLE TO VERIFY** – The search returned only third‑party summary pages (snippets) and did not include a full‑text read of the vendors’ official pricing pages. Because the official pages were not accessed, I cannot confirm that the entry‑tier details (limits, billing basis, or cost) are unchanged. The snippets suggest the free tiers still exist, but without an official source the change status cannot be definitively determined.
+
+---
+
+### Bottom line
+
+- **Neon, Supabase and Render all appear to still offer a free entry‑level tier** according to recent third‑party summaries, matching the baseline description of “$0 / month.”
+- **No official pricing pages were captured in today’s search**, so I cannot verify with certainty that the limits, billing terms or exact costs have remained identical since 10 Nov 2026.  
+
+If you need a definitive confirmation, I can perfo
 
 </details>
 
@@ -225,7 +272,122 @@ If you need a zero‑cost start, Neon is the clear winner. If you prefer an alwa
 ### "I'll send the project proposal to Rahul by Friday, and I might email Priya about the budget." _(asked as of 2026-11-09T05:00Z)_
 
 - intent: `research`, tool_choice: `auto`
-- latency: 25.9 s · rounds: 1 · tokens in/out: 1819/133 · search credits: 0
+- latency: 25.8 s · rounds: 1 · tokens in/out: 1819/145 · search credits: 0
+- searches: []
+- sources: 0 (0 official, 0 read in full, 0 cited) · claim coverage: n/a
+
+
+<details><summary>Answer</summary>
+
+**From our earlier conversation:**  
+There is no saved record of a prior message on “Friday” (6 November 2026) or any other date that matches the content you’re referring to.
+
+**Current note:**  
+You mentioned you’ll send the project proposal to Rahul by Friday and may email Priya about the budget. I’ve logged the action item to send the proposal to Rahul (noted on Monday 9 November 2026). Let me know if you’d like a reminder or help drafting any of those emails.
+
+</details>
+
+### "We will use MongoDB for the database." _(asked as of 2026-11-03T05:00Z)_
+
+- intent: `research`, tool_choice: `auto`
+- latency: 25.8 s · rounds: 1 · tokens in/out: 1742/100 · search credits: 0
+- searches: []
+- sources: 0 (0 official, 0 read in full, 0 cited) · claim coverage: n/a
+
+
+<details><summary>Answer</summary>
+
+**From our earlier conversation (3 November 2026, 10:30 Asia/Kolkata)**  
+You said: “We will use MongoDB for the database.”  
+
+No further information or verification is needed at this time. If you’d like details on MongoDB pricing, deployment options, or recent feature updates, just let me know and I can look them up for you.
+
+</details>
+
+### "After comparing the databases, PostgreSQL seems better because we need joins." _(asked as of 2026-11-05T05:00Z)_
+
+- intent: `research`, tool_choice: `auto`
+- latency: 9.9 s · rounds: 1 · tokens in/out: 1935/166 · search credits: 0
+- searches: []
+- sources: 0 (0 official, 0 read in full, 0 cited) · claim coverage: n/a
+
+
+<details><summary>Answer</summary>
+
+**Got it!** You’ve decided that PostgreSQL is the better fit for your project because you need join capabilities.  
+
+If you’d like any of the following, just let me know:
+
+- A quick overview of PostgreSQL’s pricing (managed services vs self‑hosted)  
+- Comparison of key features between PostgreSQL and MongoDB  
+- Guidance on migrating your existing MongoDB data to PostgreSQL  
+- Recommendations for hosting options (cloud providers, managed PostgreSQL services, etc.)  
+
+I’m ready to dive into whichever details you need next.
+
+</details>
+
+### "We have finalized PostgreSQL." _(asked as of 2026-11-07T05:00Z)_
+
+- intent: `research`, tool_choice: `auto`
+- latency: 25.1 s · rounds: 1 · tokens in/out: 1947/81 · search credits: 0
+- searches: []
+- sources: 0 (0 official, 0 read in full, 0 cited) · claim coverage: n/a
+
+
+<details><summary>Answer</summary>
+
+**Got it!** You’ve confirmed that PostgreSQL is the chosen database for your project. If you need any next‑step help—such as pricing details for managed PostgreSQL services, migration guidance from MongoDB, or recommendations for cloud hosting—just let me know.
+
+</details>
+
+### "What commitments do I have?"
+
+- intent: `open_loops`, tool_choice: `none`
+- latency: 25.4 s · rounds: 1 · tokens in/out: 1348/65 · search credits: 0
+- searches: []
+- sources: 0 (0 official, 0 read in full, 0 cited) · claim coverage: n/a
+
+
+<details><summary>Answer</summary>
+
+**Commitments & obligations**
+
+- *None recorded.* (The “Open loops” section lists “Commitments & obligations: none recorded.”)
+
+</details>
+
+### "How has my thinking about the database changed?"
+
+- intent: `decision_history`, tool_choice: `none`
+- latency: 10.5 s · rounds: 1 · tokens in/out: 1857/266 · search credits: 0
+- searches: []
+- sources: 0 (0 official, 0 read in full, 0 cited) · claim coverage: n/a
+
+
+<details><summary>Answer</summary>
+
+**How your thinking about the database evolved (oldest → newest)**  
+
+| Date (Asia/Kolkata) | Decision status | Your exact words | Reason given |
+|---------------------|----------------|------------------|--------------|
+| **Tuesday 3 November 2026** | chosen (later superseded) | “We will use MongoDB for the database.” | *no reason was recorded* |
+| **Thursday 5 November 2026** | considering (later superseded) | “After comparing the databases, PostgreSQL seems better because we need joins.” | *we need joins* |
+| **Saturday 7 November 2026** | chosen | “We have finalized PostgreSQL.” | *no reason was recorded* |
+
+**Summary**  
+- You initially selected **MongoDB** (3 Nov).  
+- Two days later you reconsidered, favoring **PostgreSQL** because you needed join capabilities (5 Nov).  
+- By the following Saturday you confirmed **PostgreSQL** as the final choice (7 Nov).  
+
+No other decisions about the database are recorded.
+
+</details>
+
+### "What did I ask you on 20 October?"
+
+- intent: `recall`, tool_choice: `none`
+- latency: 24.9 s · rounds: 1 · tokens in/out: 1235/79 · search credits: 0
 - searches: []
 - sources: 0 (0 official, 0 read in full, 0 cited) · claim coverage: n/a
 
@@ -233,94 +395,8 @@ If you need a zero‑cost start, Neon is the clear winner. If you prefer an alwa
 <details><summary>Answer</summary>
 
 **From our earlier conversation**  
-There is no saved record of a prior discussion about sending a proposal to Rahul or emailing Priya.
+I have no saved record of any message from you on Tuesday 20 October 2026.  
 
-**Current note**  
-You mentioned you’ll send the project proposal to Rahul by Friday and may email Priya about the budget. I’ve logged the action item “Send the project proposal to Rahul” (noted on Monday 9 November 2026). Let me know if you’d like any help drafting the email or setting a reminder.
-
-</details>
-
-### "We will use MongoDB for the database." _(asked as of 2026-11-03T05:00Z)_
-
-- intent: `research`, tool_choice: `auto`
-- latency: 25.2 s · rounds: - · tokens in/out: -/- · search credits: 0
-- searches: []
-- sources: 0 (0 official, 0 read in full, 0 cited) · claim coverage: n/a
-- ERROR: model The model's free daily limit has been used up (Groq free tier: about 200K tokens or 1,000 requests per day). It resets within 24 hours — memory, open loops and history remain available in the Open loops and Memory views.
-
-<details><summary>Answer</summary>
-
-The model's free daily limit has been used up (Groq free tier: about 200K tokens or 1,000 requests per day). It resets within 24 hours — memory, open loops and history remain available in the Open loops and Memory views.
-
-</details>
-
-### "After comparing the databases, PostgreSQL seems better because we need joins." _(asked as of 2026-11-05T05:00Z)_
-
-- intent: `research`, tool_choice: `auto`
-- latency: 9.1 s · rounds: - · tokens in/out: -/- · search credits: 0
-- searches: []
-- sources: 0 (0 official, 0 read in full, 0 cited) · claim coverage: n/a
-- ERROR: model The model's free daily limit has been used up (Groq free tier: about 200K tokens or 1,000 requests per day). It resets within 24 hours — memory, open loops and history remain available in the Open loops and Memory views.
-
-<details><summary>Answer</summary>
-
-The model's free daily limit has been used up (Groq free tier: about 200K tokens or 1,000 requests per day). It resets within 24 hours — memory, open loops and history remain available in the Open loops and Memory views.
-
-</details>
-
-### "We have finalized PostgreSQL." _(asked as of 2026-11-07T05:00Z)_
-
-- intent: `research`, tool_choice: `auto`
-- latency: 0.3 s · rounds: - · tokens in/out: -/- · search credits: 0
-- searches: []
-- sources: 0 (0 official, 0 read in full, 0 cited) · claim coverage: n/a
-- ERROR: model The model's free daily limit has been used up (Groq free tier: about 200K tokens or 1,000 requests per day). It resets within 24 hours — memory, open loops and history remain available in the Open loops and Memory views.
-
-<details><summary>Answer</summary>
-
-The model's free daily limit has been used up (Groq free tier: about 200K tokens or 1,000 requests per day). It resets within 24 hours — memory, open loops and history remain available in the Open loops and Memory views.
-
-</details>
-
-### "What commitments do I have?"
-
-- intent: `open_loops`, tool_choice: `none`
-- latency: 0.2 s · rounds: - · tokens in/out: -/- · search credits: 0
-- searches: []
-- sources: 0 (0 official, 0 read in full, 0 cited) · claim coverage: n/a
-- ERROR: model The model's free daily limit has been used up (Groq free tier: about 200K tokens or 1,000 requests per day). It resets within 24 hours — memory, open loops and history remain available in the Open loops and Memory views.
-
-<details><summary>Answer</summary>
-
-The model's free daily limit has been used up (Groq free tier: about 200K tokens or 1,000 requests per day). It resets within 24 hours — memory, open loops and history remain available in the Open loops and Memory views.
-
-</details>
-
-### "How has my thinking about the database changed?"
-
-- intent: `decision_history`, tool_choice: `none`
-- latency: 0.3 s · rounds: - · tokens in/out: -/- · search credits: 0
-- searches: []
-- sources: 0 (0 official, 0 read in full, 0 cited) · claim coverage: n/a
-- ERROR: model The model's free daily limit has been used up (Groq free tier: about 200K tokens or 1,000 requests per day). It resets within 24 hours — memory, open loops and history remain available in the Open loops and Memory views.
-
-<details><summary>Answer</summary>
-
-The model's free daily limit has been used up (Groq free tier: about 200K tokens or 1,000 requests per day). It resets within 24 hours — memory, open loops and history remain available in the Open loops and Memory views.
-
-</details>
-
-### "What did I ask you on 20 October?"
-
-- intent: `recall`, tool_choice: `none`
-- latency: 0.5 s · rounds: 1 · tokens in/out: 1235/78 · search credits: 0
-- searches: []
-- sources: 0 (0 official, 0 read in full, 0 cited) · claim coverage: n/a
-
-
-<details><summary>Answer</summary>
-
-**From our earlier conversation (checked on 11 November 2026):**  
-There is no saved user message for 20 October 2026 in the system. I have no record of any question you asked on that date.
+**Checked on 11 November 2026** – no saved user messages exist for that date.
 
 </details>
