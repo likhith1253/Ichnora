@@ -100,7 +100,11 @@ describe.runIf(enabled)("live: hiring examples", () => {
   it("Example 3 — last Tuesday's Postgres hosting → has pricing changed?", async () => {
     const ws = randomUUID();
     report.push("## Example 3 — Postgres hosting pricing", "");
-    await ask(ws, "I need managed Postgres hosting for a side project. Compare entry pricing for Neon, Supabase and Render.", new Date("2026-11-03T06:00:00Z"));
+    // "Last Tuesday" relative to the real run date (most recent Tuesday before today, IST).
+    const today = new Date(Date.now() + 5.5 * 3600_000);
+    const back = ((today.getUTCDay() - 2 + 7) % 7) || 7;
+    const lastTuesday = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - back, 6, 0, 0));
+    await ask(ws, "I need managed Postgres hosting for a side project. Compare entry pricing for Neon, Supabase and Render.", lastTuesday);
     const r = await ask(ws, "Last Tuesday I asked you about Postgres hosting. Has any pricing changed since then?");
     expect(intent(r)).toMatchObject({ intent: "recall_and_verify", toolChoice: "required" });
   });

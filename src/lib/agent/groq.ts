@@ -187,7 +187,7 @@ ${NO_SEARCH_NOTE}` };
         planned = true;
         messages.push({
           role: "system",
-          content: `Evidence already gathered by web search for this re-check (cite it by [n]; call web_search only if something you need is still missing):
+          content: `Evidence gathered by web search for this re-check (cite it by [n]; where an item is not covered, mark it UNABLE TO VERIFY):
 
 ${run.content}`,
         });
@@ -198,7 +198,10 @@ ${run.content}`,
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const canSearch = searchAvailable && !searchUnavailable && req.toolChoice !== "none" && budget.remaining > 0 && round < MAX_ROUNDS - 1;
       // With planned evidence in hand, searching again is optional, not required.
-      let choice: "auto" | "required" | "none" = canSearch ? (round === 0 && req.toolChoice === "required" && !planned ? "required" : "auto") : "none";
+      // Planned evidence in hand → answer from it in ONE round (no tool on round 1).
+      // Live runs showed that offering the tool again just bought a second
+      // search round (+45 s, +3K tokens) without better evidence.
+      let choice: "auto" | "required" | "none" = planned && round === 0 ? "none" : canSearch ? (round === 0 && req.toolChoice === "required" ? "required" : "auto") : "none";
 
       text = "";
       let calls = new Map<number, { id: string; name: string; args: string }>();

@@ -422,9 +422,9 @@ describe("planned re-check searches", () => {
     const events = await run(new GroqProvider(CFG, search, groq), { ...REQ, toolChoice: "required", plannedQueries: ["HubSpot pricing plans 2026", "Pipedrive pricing plans 2026"] });
     expect(search.calls.map((c) => c.query)).toEqual(["HubSpot pricing plans 2026", "Pipedrive pricing plans 2026"]);
     expect(groq.bodies).toHaveLength(1); // one model round
-    expect(groq.bodies[0]!.tool_choice).toBe("auto"); // tool still available, no longer forced
+    expect(groq.bodies[0]!.tools).toBeUndefined(); // answered from planned evidence in one round
     const sys = (groq.bodies[0]!.messages as Json[]).map((m) => String(m.content)).join("\n");
-    expect(sys).toContain("Evidence already gathered by web search");
+    expect(sys).toContain("Evidence gathered by web search for this re-check");
     const done = events.at(-1) as Extract<ProviderEvent, { type: "done" }>;
     expect(done.text).toContain("[hubspot.com](https://hubspot.com/pricing)");
     expect(done.searchQueries).toHaveLength(2);

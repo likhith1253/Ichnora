@@ -60,6 +60,7 @@ flowchart TB
 ## Why this design
 - **Correctness lives in code, not in the prompt.** Dates, memory, citations and comparisons are where chat agents fail quietly, so each one is a pure function with a test. The model does what it is good at: understanding the question and writing the answer.
 - **One tool, by choice.** Memory as a model tool would add a round-trip, cost tokens, and let the model decide whether to remember. Retrieval before the call is deterministic and nearly free. The single tool hides a small pipeline (search → rank → read → label) the model never has to orchestrate.
+- **Planned re-checks.** For a change check with a known baseline, the app already knows what to verify: each entity's current pricing and/or releases. It runs those searches itself, through the same internal pipeline, and the model answers from that evidence in one round. This is search *planning*, not a second tool. The model still only ever sees `web_search`.
 - **Fast where it can be.** Most personal questions skip search entirely (recall answered in about 2 s live). Research batches its queries and is capped at 3 model rounds, and free-tier limits are paced proactively rather than hit and retried.
 - **SQL + FTS5 instead of a vector DB.** The hard questions are structural ("on 3 November", "overdue", "superseded MongoDB", "which five products"), and SQL answers them exactly. No test case needed semantic similarity, which would add a model and nondeterminism.
 - **Honest under limits.** When Tavily credits (persisted ledger, with a reserve kept for change checks) or Groq quotas run out, the answer says so and marks values unverified. Recall, open loops and decisions keep working.
@@ -77,10 +78,10 @@ flowchart TB
 - **Routing:** 0 unnecessary or missed searches; 20/20 intents correct.
 - **Dates and change detection:** 14/14 date cases (including timezone midnights); 10/10 change verdicts, with 0 false "no change".
 - **Live:** all three challenge examples run end to end against real Groq and Tavily (`eval/live.md`).
-- **Known weak spot:** live latency of change checks (about 50–90 s while being paced under the free tier's token-per-minute limit).
+- **Known weak spot:** live latency of change checks. They took about 55–100 s while paced under the free tier's 8K tokens per minute, and one full live evaluation uses about 180K of Groq's 200K free daily tokens. Planned re-checks now cut a change check to one model round, but that is verified by tests only, not yet live.
 
 ## With another week
-1. **Planned re-checks:** for a known baseline, the app issues the per-entity searches itself, so a change check needs one model round instead of two or three.
+1. **Official-domain targeting for planned re-checks:** pass each vendor's own domain (`include_domains`) so the planned searches hit pricing pages directly. In the live run, most planned results were third-party pages.
 2. **Structured then/now extraction** (schema-validated JSON from the model) instead of parsing answer tables.
 3. **Rolling summaries** for long threads.
 4. **Paraphrase recall** ("that database thing") with small local embeddings.
