@@ -1,6 +1,7 @@
 import type { Message } from "../db/repo";
 import { renderMemoryContext, sanitizeUntrusted } from "../memory/context";
 import type { Retrieval } from "../memory/retrieval";
+import { planRecheckQueries } from "./plan";
 import { formatLongDate, localDateOf, localTimeOf } from "../time/dates";
 
 export interface ChatTurn {
@@ -20,6 +21,8 @@ export interface ModelRequest {
   entities?: string[];
   /** User's local date (YYYY-MM-DD) — for freshness ranking. */
   today?: string;
+  /** Searches the app runs before the first model round (planned re-checks). */
+  plannedQueries?: string[];
 }
 
 const BASE_RULES = `You are Minimi, a fast, careful research assistant with long-term memory of this user's past conversations.
@@ -113,5 +116,6 @@ ${ctx}
   }));
 
   const entities = [...new Set([...(r.referent?.entities ?? []), ...r.memory.flatMap((m) => m.entities)])].slice(0, 20);
-  return { system, memoryContext, history, user: opts.userText, toolChoice: r.toolChoice, entities, today };
+  const plannedQueries = planRecheckQueries(r, opts.userText, today);
+  return { system, memoryContext, history, user: opts.userText, toolChoice: r.toolChoice, entities, today, plannedQueries };
 }

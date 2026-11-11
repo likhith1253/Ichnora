@@ -164,9 +164,41 @@ export class GroqProvider implements LlmProvider {
 
     yield { type: "phase", phase: req.toolChoice === "none" || !searchAvailable ? "thinking" : "searching" };
 
+    // Planned re-check: the app already knows which entities to verify, so it
+    // runs those searches through the same internal pipeline before round 1.
+    // The evidence goes in as plain (numbered) context, so the model can answer
+    // in a single round and still call web_search for anything missing.
+    let planned = false;
+    if (searchAvailable && req.toolChoice !== "none" && req.plannedQueries?.length) {
+      const run = await runWebSearch(JSON.stringify({ queries: req.plannedQueries }), this.search!, {
+        signal, seenUrls, budget, numbered, extractBudget, extracted, entities: req.entities, today: req.today,
+      });
+      for (const q of run.queries) {
+        queries.push(q);
+        yield { type: "search", query: q };
+      }
+      extractions.push(...run.extractions);
+      if (run.unavailable) {
+        searchUnavailable = true;
+        messages[0] = { role: "system", content: `${String(messages[0]!.content)}
+
+${NO_SEARCH_NOTE}` };
+      } else if (run.evidence.length) {
+        planned = true;
+        messages.push({
+          role: "system",
+          content: `Evidence already gathered by web search for this re-check (cite it by [n]; call web_search only if something you need is still missing):
+
+${run.content}`,
+        });
+      }
+      yield { type: "phase", phase: "thinking" };
+    }
+
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const canSearch = searchAvailable && !searchUnavailable && req.toolChoice !== "none" && budget.remaining > 0 && round < MAX_ROUNDS - 1;
-      let choice: "auto" | "required" | "none" = canSearch ? (round === 0 && req.toolChoice === "required" ? "required" : "auto") : "none";
+      // With planned evidence in hand, searching again is optional, not required.
+      let choice: "auto" | "required" | "none" = canSearch ? (round === 0 && req.toolChoice === "required" && !planned ? "required" : "auto") : "none";
 
       text = "";
       let calls = new Map<number, { id: string; name: string; args: string }>();

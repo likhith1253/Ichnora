@@ -87,12 +87,15 @@ if (groq && TAVILY && !failed) {
     ok(`model called ${call.function.name}(${JSON.stringify(q)})`);
     const results = await Promise.all(q.map(tavily));
     const content = results.flatMap((j) => (j.results ?? []).slice(0, 4).map((h) => `- ${h.title}\n  URL: ${h.url}\n  Snippet: ${String(h.content).slice(0, 300)}`)).join("\n");
-    messages.push(r1.choices[0].message, { role: "tool", tool_call_id: call.id, content });
+    // Same technique as the app (agent/groq.ts foldToolExchange): give the final
+    // round the evidence as plain context, so gpt-oss does not emit another tool call.
+    messages.push({ role: "system", content: `Evidence gathered by web search (cite by Markdown link):
+${content}` });
     const r2 = await groq.chat.completions.create({ model: MODEL, messages, reasoning_effort: "low", max_completion_tokens: 800 });
     const answer = r2.choices[0]?.message?.content ?? "";
     ok(`answered in ${Date.now() - t0} ms total`);
     console.log(`  answer: ${answer.replace(/\s+/g, " ").slice(0, 300)}`);
-    if (/\]\(https?:\/\//.test(answer)) ok("answer contains a citation link");
+    if (/\]\(https?:\/\/|【[^】]*https?:\/\//.test(answer)) ok("answer cites a source (the app turns gpt-oss 【…】 markers into validated links)");
     else bad("answer has no citation link");
   } catch (e) {
     bad(`end-to-end failed: ${e.status ?? ""} ${String(e.message).slice(0, 220)}`);

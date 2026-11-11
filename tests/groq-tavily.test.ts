@@ -414,3 +414,19 @@ describe("final-round tool call recovery", () => {
     expect(rewriteCitationMarkers("Price $90【1】.", ["https://www.hubspot.com/pricing/sales"])).toBe("Price $90 ([hubspot.com](https://www.hubspot.com/pricing/sales)).");
   });
 });
+
+describe("planned re-check searches", () => {
+  it("runs the app's planned searches before round 1, then lets the model answer in one round", async () => {
+    const search = new FakeSearch();
+    const groq = new ScriptedGroq([textChunks("HubSpot is $100 now [1].")]);
+    const events = await run(new GroqProvider(CFG, search, groq), { ...REQ, toolChoice: "required", plannedQueries: ["HubSpot pricing plans 2026", "Pipedrive pricing plans 2026"] });
+    expect(search.calls.map((c) => c.query)).toEqual(["HubSpot pricing plans 2026", "Pipedrive pricing plans 2026"]);
+    expect(groq.bodies).toHaveLength(1); // one model round
+    expect(groq.bodies[0]!.tool_choice).toBe("auto"); // tool still available, no longer forced
+    const sys = (groq.bodies[0]!.messages as Json[]).map((m) => String(m.content)).join("\n");
+    expect(sys).toContain("Evidence already gathered by web search");
+    const done = events.at(-1) as Extract<ProviderEvent, { type: "done" }>;
+    expect(done.text).toContain("[hubspot.com](https://hubspot.com/pricing)");
+    expect(done.searchQueries).toHaveLength(2);
+  });
+});
