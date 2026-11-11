@@ -2,7 +2,7 @@
 
 Minimi is a research chat agent that **remembers what you asked and when**, and can tell you whether an earlier answer still holds. It uses one model (Groq `gpt-oss-120b`) and exactly one tool, `web_search`. Everything that must be *exactly right* (dates, history, commitments, sources, price comparisons) is handled by deterministic, tested application code over SQLite. The model's job is to understand the question and write a clear answer.
 
-> **Reading guide:** start with the overview below. Each numbered part links to a collapsible zoom-in with its own diagram, so you can open only what interests you.
+> **Reading guide:** start with the overview below. Each numbered part has a **details** link that jumps to its section. Click the grey <kbd>▶ click to expand</kbd> button (or anywhere on that line) to open the deep dive and its diagram.
 
 ## 1. Overview
 
@@ -29,21 +29,21 @@ flowchart LR
   classDef ext fill:#f3f4f6,stroke:#6b7280,color:#111827
 ```
 
-| # | Component | One line | Zoom in |
+| # | Component | One line | Deep dive |
 |---|---|---|---|
-| ① | Chat API | Streams each turn over SSE. Retried requests are idempotent. | [details](#c1) |
-| ② | Memory engine | Exact recall by date or topic, commitments and decisions. | [details](#c2) |
-| ③ | Router | Decides whether a question needs the web at all. | [details](#c3) |
-| ④ | Search planner | Pre-builds one search per product for change checks. | [details](#c4) |
-| ⑤ | Agent loop | One model, one tool, at most 3 rounds, token-paced. | [details](#c5) |
-| ⑥ | Search pipeline | Search, rank official pages first, read the best ones in full. | [details](#c6) |
-| ⑦ | Evidence check | Verifies citations and computes Then → Now in code. | [details](#c7) |
+| ① | Chat API | Streams each turn over SSE. Retried requests are idempotent. | [**▶ open**](#c1) |
+| ② | Memory engine | Exact recall by date or topic, commitments and decisions. | [**▶ open**](#c2) |
+| ③ | Router | Decides whether a question needs the web at all. | [**▶ open**](#c3) |
+| ④ | Search planner | Pre-builds one search per product for change checks. | [**▶ open**](#c4) |
+| ⑤ | Agent loop | One model, one tool, at most 3 rounds, token-paced. | [**▶ open**](#c5) |
+| ⑥ | Search pipeline | Search, rank official pages first, read the best ones in full. | [**▶ open**](#c6) |
+| ⑦ | Evidence check | Verifies citations and computes Then → Now in code. | [**▶ open**](#c7) |
 
 ## 2. Zoom in
 
 <a id="c1"></a>
 <details>
-<summary><b>① Chat API</b>: one turn, streamed end to end</summary>
+<summary><b>① Chat API</b>: one turn, streamed end to end &nbsp;<kbd>▶ click to expand</kbd></summary>
 
 ```mermaid
 sequenceDiagram
@@ -69,7 +69,7 @@ sequenceDiagram
 
 <a id="c2"></a>
 <details>
-<summary><b>② Memory engine</b>: what you asked, promised and decided</summary>
+<summary><b>② Memory engine</b>: what you asked, promised and decided &nbsp;<kbd>▶ click to expand</kbd></summary>
 
 ```mermaid
 flowchart LR
@@ -90,7 +90,7 @@ flowchart LR
 
 <a id="c3"></a>
 <details>
-<summary><b>③ Router</b>: search only when it adds something</summary>
+<summary><b>③ Router</b>: search only when it adds something &nbsp;<kbd>▶ click to expand</kbd></summary>
 
 | Intent | Example | Tool policy |
 |---|---|---|
@@ -106,7 +106,7 @@ Routing is deterministic and tested, with 0 unnecessary searches in the evaluati
 
 <a id="c4"></a>
 <details>
-<summary><b>④ Search planner</b>: five products, one model round</summary>
+<summary><b>④ Search planner</b>: five products, one model round &nbsp;<kbd>▶ click to expand</kbd></summary>
 
 ```mermaid
 flowchart LR
@@ -123,7 +123,7 @@ The app already knows what a re-check needs, so it runs those searches first. Me
 
 <a id="c5"></a>
 <details>
-<summary><b>⑤ Agent loop</b>: one model, one tool, bounded</summary>
+<summary><b>⑤ Agent loop</b>: one model, one tool, bounded &nbsp;<kbd>▶ click to expand</kbd></summary>
 
 - At most 3 rounds. The final round receives the evidence as plain context, so the model writes an answer instead of calling the tool again.
 - A token gate paces requests under Groq's 8K tokens-per-minute free tier, so a burst of questions waits instead of failing.
@@ -132,7 +132,7 @@ The app already knows what a re-check needs, so it runs those searches first. Me
 
 <a id="c6"></a>
 <details>
-<summary><b>⑥ Search pipeline</b>: inside the single <code>web_search</code> tool</summary>
+<summary><b>⑥ Search pipeline</b>: inside the single <code>web_search</code> tool &nbsp;<kbd>▶ click to expand</kbd></summary>
 
 ```mermaid
 flowchart LR
@@ -147,7 +147,7 @@ A credit ledger tracks Tavily's 1,000 monthly credits and keeps a reserve for ch
 
 <a id="c7"></a>
 <details>
-<summary><b>⑦ Evidence check</b>: citations and Then → Now, computed in code</summary>
+<summary><b>⑦ Evidence check</b>: citations and Then → Now, computed in code &nbsp;<kbd>▶ click to expand</kbd></summary>
 
 ```mermaid
 flowchart LR
