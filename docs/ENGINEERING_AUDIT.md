@@ -112,7 +112,7 @@ New defects found during evaluation and fixed (each with a regression test):
 
 Added optional authentication and a disposable demo **without** changing the
 storage model: SQLite remains the source of truth, and the cloud stays
-inference-only (Groq) and research-only (Tavily). See `ARCHITECTURE_VERIFICATION.md`
+inference-only (Groq) and research-only (Tavily). See `DESIGN.md`
 for the full review; outcome **CASE A** (architecture correct).
 
 - **Migration v5** (`identity_and_demo`, forward-only): `users`, `oauth_accounts`
@@ -147,3 +147,21 @@ for the full review; outcome **CASE A** (architecture correct).
   single-user trust model; a remote deployment keeps SQLite on the host, not on
   the user's device.
 
+
+
+## 10. Final review (11 Nov 2026)
+- **Unwired infrastructure removed.** A cache layer, a durable job queue, archival, backups, circuit breakers, quota reservations, rolling summaries and per-turn budgets (about 2,000 lines) were not reachable from any API route or the agent pipeline, and the docs claimed behaviour they did not have. Two of them would have been harmful if switched on: archival deleted raw messages (breaking exact recall), and the cache would have served stale results to "is it still correct today?". All were removed with their tests and docs.
+- **Identity and demo fixes:**
+  - The demo rate limit no longer trusts client-supplied forwarding headers, and a global cap was added.
+  - The bare workspace header can no longer open demo or account workspaces.
+  - Demo answers are cached only from pristine seed data, so nothing is shared between visitors.
+  - "Reset demo" can no longer sign out a real user.
+  - Starting a demo revokes the session it replaces.
+  - Guest cleanup never deletes an OAuth user.
+  - Demo seeding is atomic.
+  - `/api/status` reports configuration only.
+  - Claiming a workspace requires the browser that holds it.
+  - Regression tests: `tests/security-fixes.test.ts`.
+- **UI:**
+  - The document could scroll behind the app shell, because hidden labels were absolutely positioned without a positioned ancestor. Fixed.
+  - Citation coverage is now shown only for web-backed answers.

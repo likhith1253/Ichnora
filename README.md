@@ -5,7 +5,23 @@ A personal research agent with **one tool, web search**, and memory built around
 - **What did I promise, and what is still open?** Commitments, waiting-on items and deadlines (open loops), plus how decisions evolved.
 - **Has it changed since?** Dated research snapshots compared with fresh evidence, with official sources and validated citations.
 
-Design rationale: [DESIGN.md](DESIGN.md) · audit of the earlier version: [ENGINEERING_AUDIT.md](ENGINEERING_AUDIT.md) · measured results: [EVALUATION.md](EVALUATION.md) and [eval/live.md](eval/live.md).
+Design rationale and architecture diagram: [DESIGN.md](DESIGN.md) · measured results: [EVALUATION.md](EVALUATION.md) and [eval/live.md](eval/live.md) · engineering audit: [docs/ENGINEERING_AUDIT.md](docs/ENGINEERING_AUDIT.md).
+
+## Demo
+
+![Minimi demo: a computed Then → Now re-check, live date recall, open loops and decision history](docs/media/demo.gif)
+
+▶ The full recording (about 50 s, no audio) is [docs/media/demo.webm](docs/media/demo.webm). It was recorded with the built-in **Try the demo** workspace, so it needs no data of your own.
+
+| | |
+|---|---|
+| ![Re-check answer with numbered citations](docs/media/01-recheck-answer.png) | ![Then → Now comparison computed by the app](docs/media/02-then-now-card.png) |
+| **Re-check answer.** Every price is cited `[n]` to an official page. | **Then → Now, computed in code.** CHANGED / NO MATERIAL CHANGE FOUND / UNABLE TO VERIFY, with each row's evidence. |
+| ![Sources labelled official / third-party and full page / snippet](docs/media/03-sources-evidence.png) | ![Exact recall of a question asked on 3 November](docs/media/04-date-recall.png) |
+| **Sources.** Each is labelled official or third-party, and read in full or snippet only. | **"What did I ask you on 3 November?"** The question comes back verbatim with its local time, and no search runs. |
+| ![Open loops: commitments, waiting on others, tentative intentions](docs/media/05-open-loops.png) | ![Memory: decision timeline and dated research snapshots](docs/media/07-decision-timeline.png) |
+| **Open loops.** Taken from your own words, with real due dates. Intentions are never counted as promises. | **Memory.** The decision timeline keeps superseded steps, and research snapshots are the baselines for re-checks. |
+
 
 ## Quick start (Windows, macOS, Linux)
 
@@ -73,7 +89,7 @@ Behind a proxy or tunnel, set `PUBLIC_BASE_URL` to the public origin (e.g. `http
 
 ### Try demo
 
-"Try the demo" appears on the sign-in screen and, in LOCAL mode, in the sidebar. It creates a throwaway, seeded workspace (a CRM shortlist snapshot, a later re-check with a computed change report, a dated Node.js question, commitments/waiting/intentions and a MongoDB→PostgreSQL decision history). Everything on screen is labelled synthetic, and it only ever lives in a `kind='demo'` workspace. Demo sessions have their own budget (default 8 model turns, 15 Tavily credits) and a per-IP creation limit, suggested answers are cached, and the workspace expires after 24 h. When the live budget is spent, memory, open loops and history keep working. Use **Reset demo** to start over, or **Sign in** to keep your own data.
+"Try the demo" appears on the sign-in screen and, in LOCAL mode, in the **Your data** menu (top right). It creates a throwaway, seeded workspace (a CRM shortlist snapshot, a later re-check with a computed change report, a dated Node.js question, commitments/waiting/intentions and a MongoDB→PostgreSQL decision history). Everything on screen is labelled synthetic, and it only ever lives in a `kind='demo'` workspace. Demo sessions have their own budget (default 8 model turns, 15 Tavily credits) and a per-IP creation limit, suggested answers are cached, and the workspace expires after 24 h. When the live budget is spent, memory, open loops and history keep working. Use **Reset demo** to start over, or **Sign in** to keep your own data.
 
 ## Environment variables
 
@@ -100,6 +116,8 @@ Behind a proxy or tunnel, set `PUBLIC_BASE_URL` to the public origin (e.g. `http
 | `DEMO_MAX_TURNS` / `DEMO_MAX_CREDITS` | no | `8` / `15` | Per-demo model turns and Tavily credits |
 | `DEMO_CACHE_TTL_MINUTES` | no | `240` | Freshness of cached guided answers |
 | `DEMO_RATE_LIMIT_MAX` / `DEMO_RATE_LIMIT_WINDOW_MINUTES` | no | `5` / `60` | Demo creations allowed per IP |
+| `DEMO_GLOBAL_MAX` | no | `30` | Demo creations allowed per window across all clients, a hard ceiling that protects free quotas |
+| `TRUST_PROXY` | no | `false` | Set to `true` only behind a reverse proxy you run. Client IPs are then read from the proxy-appended `X-Forwarded-For` hop; otherwise forwarding headers are ignored |
 
 ## Scripts
 
